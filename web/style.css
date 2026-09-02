@@ -528,3 +528,13 @@ input:focus,select:focus{background:#fff}
 .lang-seg button.on{background:var(--primary);color:#fff;font-weight:600}
 .lang-seg button:disabled{opacity:.35;cursor:not-allowed}
 .lang-note{font-size:10.5px;color:var(--ink-3);margin-top:3px}
+
+/* ═════════ 공유 · 알림 ═════════ */
+.share-btn{width:100%;padding:9px;margin-bottom:12px;border-radius:11px;
+  font-size:12.5px;font-weight:600;color:var(--primary);flex:0 0 auto;
+  background:rgba(255,255,255,.78);border:1px solid var(--glass-edge)}
+.share-btn:hover{background:#fff;border-color:var(--primary)}
+.toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%) translateY(12px);
+  z-index:60;padding:11px 20px;border-radius:999px;font-size:13px;font-weight:500;
+  opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}

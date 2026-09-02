@@ -15,7 +15,7 @@ const S = {
   course:null, candidates:[], stats:null,
   catFilter:null, selected:null, showAll:false,
   history:[], intent:null, busy:false,
-  interests:[], taste:null, lang:'ko', langsReady:['ko'],
+  interests:[], taste:null, lang:'ko', langsReady:['ko'], exclude:[],
 };
 
 const $  = s => document.querySelector(s);
@@ -175,7 +175,7 @@ async function refresh() {
     const [course, cands] = await Promise.all([
       postJSON('/api/plan', { lat:S.lat, lon:S.lon, mode:S.mode, at:S.at,
                               hours:S.hours, interests:S.interests,
-                              taste:S.taste, lang:S.lang }),
+                              taste:S.taste, lang:S.lang, exclude:S.exclude }),
       getJSON('/api/candidates', { ...baseParams(), radius_m:2500, limit:200 }),
     ]);
     S.course = course;
@@ -230,6 +230,14 @@ function tasteSummary() {
   if (cats.length) bits.push(cats.join(' · '));
   if (tags.length) bits.push(tags.map(x => '#' + x).join(' '));
   return bits.join(' / ');
+}
+
+/** 이번 일정에서만 빼고 다시 짠다. 취향에는 남기지 않는다 —
+    "오늘은 여기 말고"와 "이런 곳은 싫다"는 다른 말이다. */
+function swapStop(cid) {
+  if (!S.exclude.includes(cid)) S.exclude.push(cid);
+  S.exclude = S.exclude.slice(-30);
+  refresh();
 }
 
 /** 좋아요·관심없음을 프로필에 반영한다. 서버에 저장하지 않고 화면이 들고 있는다. */
@@ -335,6 +343,7 @@ function renderPlan() {
         <div class="l">${esc(s.line)}</div>
         <div class="stop-acts">
           <button data-act="like" data-cid="${esc(s.cid)}">👍 이런 곳 더</button>
+          <button data-act="swap" data-cid="${esc(s.cid)}">↻ 다른 곳</button>
           <button class="no" data-act="skip" data-cid="${esc(s.cid)}">✕ 관심없음</button>
         </div>
       </div>
@@ -357,7 +366,9 @@ function renderPlan() {
   });
   $$('#timeline .stop-acts button').forEach(b => b.onclick = e => {
     e.stopPropagation();
-    feedback(b.dataset.cid, b.dataset.act === 'like' ? 'like' : 'skip');
+    const act = b.dataset.act;
+    if (act === 'swap') { swapStop(b.dataset.cid); return; }
+    feedback(b.dataset.cid, act);
   });
   const bk = $('#backup .backup');
   if (bk) bk.onclick = () => selectCid(bk.dataset.cid);
@@ -621,6 +632,84 @@ async function send(text) {
   }
 }
 
+/* ───────────────────────── 공유 ───────────────────────── */
+
+function planUrl() {
+  const p = new URLSearchParams({
+    lat:S.lat.toFixed(5), lon:S.lon.toFixed(5),
+    h:S.hours, m:S.mode, lang:S.lang,
+  });
+  if (S.at) p.set('at', S.at);
+  if (S.interests.length) p.set('i', S.interests.join(','));
+  return `${location.origin}${location.pathname}?${p}`;
+}
+
+function readUrlState() {
+  const p = new URLSearchParams(location.search);
+  const num = (k, d) => {
+    const v = parseFloat(p.get(k));
+    return Number.isFinite(v) ? v : d;
+  };
+  if (p.has('lat') && p.has('lon')) {
+    S.lat = num('lat', S.lat); S.lon = num('lon', S.lon);
+    return true;                       // 공유된 링크로 들어왔다
+  }
+  return false;
+}
+
+function applyUrlOptions() {
+  const p = new URLSearchParams(location.search);
+  if (p.has('h')) {
+    S.hours = parseFloat(p.get('h')) || 4;
+    $$('#hours-seg button').forEach(b =>
+      b.classList.toggle('on', +b.dataset.h === S.hours));
+  }
+  if (p.has('m')) {
+    S.mode = p.get('m');
+    $$('#mode-seg button').forEach(b =>
+      b.classList.toggle('on', b.dataset.mode === S.mode));
+  }
+  if (p.has('at')) { S.at = p.get('at'); $('#at').value = S.at; }
+  if (p.has('lang')) S.lang = p.get('lang');
+  if (p.has('i')) {
+    S.interests = p.get('i').split(',').filter(Boolean);
+    $$('#interests button').forEach(b =>
+      b.classList.toggle('on', S.interests.includes(b.dataset.i)));
+  }
+}
+
+async function share() {
+  const url = planUrl();
+  const c = S.course;
+  const text = c && c.steps.length
+    ? `웨더핏 서울 · ${c.start}–${c.end} · ` +
+      c.steps.map(s => s.title).join(' → ')
+    : '웨더핏 서울';
+  try {
+    if (navigator.share) {
+      await navigator.share({ title:'웨더핏 서울', text, url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    toast('링크를 복사했습니다');
+  } catch (e) {
+    toast('링크 복사에 실패했습니다');
+  }
+}
+
+function toast(msg) {
+  let el = $('#toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast'; el.className = 'toast glass';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove('on'), 2200);
+}
+
 function switchTab(name) {
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   ['plan','chat','list','evidence'].forEach(t => $('#pane-' + t).hidden = t !== name);
@@ -690,8 +779,9 @@ function bindUI() {
                      : S.interests.filter(x => x !== v);
     refresh();
   });
+  $('#share-btn').onclick = share;
   $('#taste-reset').onclick = () => {
-    S.taste = null; S.interests = [];
+    S.taste = null; S.interests = []; S.exclude = [];
     $$('#interests button').forEach(b => b.classList.remove('on'));
     saveTaste(); refresh();
   };
@@ -766,6 +856,11 @@ function init() {
   } catch (e) { /* 무시 */ }
   bindUI();
   syncLanguages();
+  if (readUrlState()) {
+    applyUrlOptions();
+    $('#geo-overlay').hidden = true;
+    start(false);
+  }
   // 지난번 위치를 기억해 두면 재방문이 매끄럽다
   try {
     const saved = JSON.parse(localStorage.getItem(LS_KEY) || 'null');

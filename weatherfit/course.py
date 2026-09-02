@@ -169,15 +169,18 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                  budget_min: int = 240, area_radius_m: float = 4000.0,
                  interests: list[str] | None = None,
                  max_stops: int = 5,
-                 taste: Taste | None = None) -> Course:
+                 taste: Taste | None = None,
+                 exclude: set[str] | None = None) -> Course:
     """출발 시각과 남은 시간으로 실제 일정을 짠다."""
     course = Course(weather=weather, start=when, budget_min=budget_min)
     today = when.date()
     rt = router()
 
-    disliked = set(taste.disliked) if taste else set()
+    # 취향으로 걸러낸 것(영구)과 이번 일정에서만 뺀 것(일회성)을 함께 제외한다
+    skip = set(taste.disliked) if taste else set()
+    skip |= (exclude or set())
     pool = [(p, r) for p, r in passing(places, when, weather)
-            if p.lat and p.lon and is_touristic(p) and p.cid not in disliked]
+            if p.lat and p.lon and is_touristic(p) and p.cid not in skip]
     if not pool:
         course.notes.append("지금 조건에 맞는 장소를 찾지 못했습니다.")
         return course

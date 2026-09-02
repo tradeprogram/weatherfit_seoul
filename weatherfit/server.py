@@ -244,7 +244,7 @@ def make_course(lat: float, lon: float, mode: str = "auto",
                 at: str | None = None, hours: float = 4.0,
                 radius_m: int = 4000, interests: str = "",
                 explain: bool = False, taste: Taste | None = None,
-                lang: str = "ko") -> dict:
+                lang: str = "ko", exclude: list[str] | None = None) -> dict:
     """코스 생성 본체.
 
     엔드포인트를 파이썬 함수로 직접 부르면 FastAPI의 Query 기본값이
@@ -258,7 +258,7 @@ def make_course(lat: float, lon: float, mode: str = "auto",
         budget_min=int(hours * 60),
         area_radius_m=float(radius_m) if radius_m != 4000 else radius_for(hours),
         interests=[x for x in interests.split(",") if x],
-        taste=taste,
+        taste=taste, exclude=set(exclude or []),
     )
     out = c.to_dict(lang)
     out["engine"] = "rules"
@@ -296,6 +296,7 @@ class PlanIn(BaseModel):
     interests: list[str] = []
     taste: dict | None = None          # 화면이 들고 다니는 취향 프로필
     lang: str = "ko"
+    exclude: list[str] = []            # 이번 일정에서만 빼 달라고 한 곳
 
 
 @app.post("/api/plan")
@@ -310,7 +311,7 @@ def plan(body: PlanIn):
         taste.declare(body.interests, weight=1.5)
     out = make_course(body.lat, body.lon, body.mode, body.at, body.hours,
                       radius_m=4000, interests=",".join(body.interests),
-                      taste=taste, lang=body.lang)
+                      taste=taste, lang=body.lang, exclude=body.exclude)
     out["taste_applied"] = not taste.is_empty
     return out
 
