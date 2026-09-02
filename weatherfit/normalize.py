@@ -21,14 +21,52 @@ DAYS = "월화수목금토일"  # 0=월 … 6=일
 _TIME_RANGE = re.compile(
     r"(\d{1,2})\s*[:：]\s*(\d{2})\s*[~\-–—]\s*(\d{1,2})\s*[:：]\s*(\d{2})"
 )
+# "오전 10시", "오후 7시 30분", "오후3시30분", "저녁 8시"
+# 미술관·공연장 원문에 흔한 표기인데 콜론이 없어 위 패턴에 걸리지 않는다.
+# 그대로 두면 서울시립미술관 계열이 통째로 '판정 불가'가 된다.
+_KOR_TIME = re.compile(
+    r"(오전|오후|저녁|밤|낮)?\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분)?(?!간)"
+)
+
+
+def _kor_hour(period: str | None, hour: int) -> int:
+    """'오후 3시' → 15. 오전/오후가 없으면 그대로 둔다."""
+    if period == "오전":
+        return 0 if hour == 12 else hour
+    if period in ("오후", "저녁", "밤"):
+        return hour if hour == 12 or hour > 12 else hour + 12
+    if period == "낮":
+        return hour if hour >= 12 else hour + 12
+    return hour
+
+
+def to_24h(text: str) -> str:
+    """한글 시각 표기를 HH:MM으로 바꾼다. 나머지 파싱은 그대로 쓴다."""
+    def sub(m):
+        period, hour, minute = m.group(1), int(m.group(2)), m.group(3)
+        if hour > 24:
+            return m.group(0)
+        h = _kor_hour(period, hour)
+        if h > 24:
+            return m.group(0)
+        return f"{h:02d}:{int(minute or 0):02d}"
+    return _KOR_TIME.sub(sub, text)
+
+
 # "화~금요일", "화요일 ~ 일요일", "월~일"
 _DAY_RANGE = re.compile(rf"([{DAYS}])(?:요일)?\s*[~\-–]\s*([{DAYS}])(?:요일)?")
 _DAY_SINGLE = re.compile(rf"([{DAYS}])요일")
 
 # 한 줄 안에서 요일 구간이 바뀌는 지점. 범위형("화~금요일")을 단일형보다 먼저 시도해야
 # "화~금요일"이 "금요일"로 잘리지 않는다.
+# "토 · 일 · 공휴일", "토,일" 처럼 '요일'을 붙이지 않고 나열하는 표기도 받는다.
+# 미술관 원문에 흔한데, 이걸 못 읽으면 주말 시간표가 평일 것으로 붙는다 —
+# 모른다고 하는 것보다 나쁘다.
+_DAY_LIST = rf"[{DAYS}](?:\s*[,·ㆍ/]\s*(?:[{DAYS}]|공휴일))+"
+_DAY_LIST_RE = re.compile(_DAY_LIST)
 _DAY_SCOPE = re.compile(
-    rf"(?:[{DAYS}](?:요일)?\s*[~\-–]\s*[{DAYS}](?:요일)?|[{DAYS}]요일|평일|주말|매일)"
+    rf"(?:[{DAYS}](?:요일)?\s*[~\-–]\s*[{DAYS}](?:요일)?"
+    rf"|{_DAY_LIST}|[{DAYS}]요일|평일|주말|매일)"
 )
 
 # 이 표현이 있으면 문장 하나로 시간표가 확정되지 않는다
@@ -107,6 +145,30 @@ def _split_exceptions(text: str) -> tuple[str, list[str]]:
     return body, notes
 
 
+# 회차 공연 한 회를 이만큼으로 본다. 교대의식·마당놀이 등이 대개 이 언저리다.
+SHOW_WINDOW_MIN = 40
+# "3회 : 11:00, 14:00, 15:30" 처럼 구간이 아니라 시작 시각만 나열하는 표기
+_SHOWTIME_HINT = re.compile(r"\d\s*회|공연|상연|상영|의식|시작")
+_BARE_TIME = re.compile(r"(?<![:\d])(\d{1,2})[:：](\d{2})(?![:\d~\-–—])")
+
+
+def _showtimes(seg: str) -> list[tuple[str, str]]:
+    """회차 시작 시각 목록 → 회당 SHOW_WINDOW_MIN 짜리 구간들."""
+    if not _SHOWTIME_HINT.search(seg):
+        return []
+    hits = _BARE_TIME.findall(seg)
+    if len(hits) < 2:
+        return []
+    out = []
+    for h, m in hits:
+        h, m = int(h), int(m)
+        if h > 23:
+            continue
+        end = h * 60 + m + SHOW_WINDOW_MIN
+        out.append((f"{h:02d}:{m:02d}", f"{end // 60 % 24:02d}:{end % 60:02d}"))
+    return out
+
+
 def _days_from(text: str) -> list[int]:
     """문장에서 요일 범위를 뽑는다. 못 찾으면 빈 리스트."""
     if "평일" in text:
@@ -122,6 +184,8 @@ def _days_from(text: str) -> list[int]:
         days.update(range(i, j + 1) if i <= j else list(range(i, 7)) + list(range(0, j + 1)))
     if not days:
         days.update(DAYS.index(d) for d in _DAY_SINGLE.findall(text))
+    if not days and (m := _DAY_LIST_RE.match(text.strip())):
+        days.update(DAYS.index(d) for d in m.group() if d in DAYS)
     return sorted(days)
 
 
@@ -135,6 +199,7 @@ def parse_hours(use_time: str, closed_days: str = "") -> OpeningHours:
         return oh
 
     body, oh.exceptions = _split_exceptions(raw)
+    body = to_24h(body)
 
     if any(k in raw for k in _ALWAYS_OPEN):
         oh.always_open = True
@@ -161,11 +226,16 @@ def parse_hours(use_time: str, closed_days: str = "") -> OpeningHours:
             segments.append((m.group(), line[m.start(): end]))
 
     stated_days = False
+    showtime = False
     for scope, seg in segments:
         ranges = [
             (f"{int(h1):02d}:{m1}", f"{int(h2):02d}:{m2}")
             for h1, m1, h2, m2 in _TIME_RANGE.findall(seg)
         ]
+        if not ranges:
+            ranges = _showtimes(seg)
+            if ranges:
+                showtime = True
         if not ranges:
             continue
         days = _days_from(scope) if scope else []
@@ -183,7 +253,12 @@ def parse_hours(use_time: str, closed_days: str = "") -> OpeningHours:
     # 요일 언급 없이 시간만 있는 경우, "매일"이라는 건 우리 가정이지 원문의 진술이 아니다
     has_ambiguity = any(k in raw for k in _AMBIGUOUS)
 
-    if has_ambiguity:
+    if showtime:
+        # 회차 공연은 영업시간이 아니다. 시작 시각에 맞춰 가야 하고, 그
+        # 사실을 숨기면 "11시 공연"에 10시에 도착하는 일이 생긴다.
+        oh.confidence = "low"
+        oh.reason = f"회차 시작 시각 기준 (회당 {SHOW_WINDOW_MIN}분으로 가정)"
+    elif has_ambiguity:
         oh.confidence = "low"
         oh.reason = "예외 단서 포함 (" + ", ".join(
             k for k in _AMBIGUOUS if k in raw

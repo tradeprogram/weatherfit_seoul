@@ -144,3 +144,71 @@ class TestEnvironment:
         label, reason = tag_environment("축제/공연/행사", "2027 S/S 서울패션위크", "", [])
         assert label == "unknown"
         assert reason
+
+
+class TestKoreanTime:
+    """미술관·공연장 원문은 콜론 없이 '오전 10시–오후 8시'로 적는다.
+
+    이걸 못 읽으면 서울시립미술관 계열이 통째로 '판정 불가'가 된다.
+    """
+
+    def test_한글_시각을_읽는다(self):
+        oh = parse_hours("화요일~일요일, 오전11시-오후7시")
+        assert oh.confidence == "high"
+        assert oh.rules[0].ranges == [("11:00", "19:00")]
+
+    @pytest.mark.parametrize("raw,want", [
+        ("오전 10시", "10:00"), ("오후 8시", "20:00"), ("오후 3시 30분", "15:30"),
+        ("저녁 7시", "19:00"), ("오전 12시", "00:00"), ("오후 12시", "12:00"),
+        ("낮 2시", "14:00"),
+    ])
+    def test_오전_오후를_구분한다(self, raw, want):
+        from weatherfit.normalize import to_24h
+        assert to_24h(raw) == want
+
+    def test_시간_길이는_건드리지_않는다(self):
+        """'3시간 소요'의 3시간은 시각이 아니다."""
+        from weatherfit.normalize import to_24h
+        assert to_24h("관람 3시간 소요") == "관람 3시간 소요"
+
+    def test_요일을_나열한_표기도_읽는다(self):
+        """'토 · 일 · 공휴일'을 못 읽으면 주말 시간표가 평일 것으로 붙는다.
+        모른다고 하는 것보다 나쁘다."""
+        oh = parse_hours("평일(화-금): 오전 10시–오후 8시 "
+                         "토 · 일 · 공휴일: 오전 10시–오후 7시")
+        got = {days(r): r.ranges for r in oh.rules}
+        assert got["화수목금"] == [("10:00", "20:00")]
+        assert got["토일"] == [("10:00", "19:00")]
+
+
+class TestShowtimes:
+    """회차 공연은 영업시간이 아니다.
+
+    '매일 3회 : 오전11시, 오후2시, 오후3시30분'을 못 읽으면 운영시간을
+    10~20시로 가정해 10시에 도착하게 된다. 덕수궁 왕궁수문장 교대의식에서
+    실제로 그랬다 — 갔는데 아무것도 없는 바로 그 상황이다.
+    """
+    RAW = "매일 3회 : 오전11시, 오후2시, 오후3시30분"
+
+    def test_회차를_구간으로_바꾼다(self):
+        oh = parse_hours(self.RAW)
+        assert [r[0] for r in oh.rules[0].ranges] == ["11:00", "14:00", "15:30"]
+
+    def test_회차_사이에는_닫혀_있다(self):
+        oh = parse_hours(self.RAW)
+        assert oh.is_open_at(datetime(2026, 9, 3, 10, 5)) is False
+        assert oh.is_open_at(datetime(2026, 9, 3, 13, 0)) is False
+
+    def test_회차_시간에는_열려_있다(self):
+        oh = parse_hours(self.RAW)
+        assert oh.is_open_at(datetime(2026, 9, 3, 11, 10)) is True
+        assert oh.is_open_at(datetime(2026, 9, 3, 15, 45)) is True
+
+    def test_가정한_회차_길이를_밝힌다(self):
+        oh = parse_hours(self.RAW)
+        assert oh.confidence == "low"        # 회당 길이는 우리 가정이다
+        assert "회차" in oh.reason
+
+    def test_한_시각뿐이면_회차로_보지_않는다(self):
+        """'오후 7시 30분부터 90분간'은 회차 목록이 아니다."""
+        assert parse_hours("오후 7시 30분부터 90분간 진행").rules == []
