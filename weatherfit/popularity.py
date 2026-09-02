@@ -457,6 +457,7 @@ def load_cache() -> dict:
 
 
 _scores: dict[str, float] | None = None
+_notes: dict[str, str] | None = None
 
 
 def scores() -> dict[str, float]:
@@ -468,9 +469,28 @@ def scores() -> dict[str, float]:
     return _scores
 
 
+def notes() -> dict[str, str]:
+    """cid → 왜 '알려진 곳'인지 한 줄.
+
+    적재 때 한 번만 만든다. 근거 한 줄을 위해 1MB짜리 캐시를 매번 다시
+    읽으면 일정 한 번에 서너 번씩 파싱하게 된다.
+    """
+    global _notes
+    if _notes is None:
+        out = {}
+        for cid, v in load_cache().items():
+            if not v.get("geo_ok", True) or not v.get("wiki_title"):
+                continue
+            views = int(v.get("wiki_views") or 0)
+            out[cid] = (f"위키백과 3개월 {views:,}회 조회" if views
+                        else "위키백과에 문서가 있음")
+        _notes = out
+    return _notes
+
+
 def reset() -> None:
-    global _scores
-    _scores = None
+    global _scores, _notes
+    _scores = _notes = None
 
 
 def main() -> None:

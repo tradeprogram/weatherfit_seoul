@@ -179,3 +179,19 @@ class TestTaste:
         t = Taste()
         t.declare(["문화관광"], weight=2.0)
         assert "문화관광" in t.describe()
+
+
+class TestPopularNote:
+    def test_숫자로_말한다(self):
+        """막대 길이만 보여 주면 근거가 아니라 장식이다."""
+        from weatherfit import popularity
+        from weatherfit.quality import popular_note
+        popularity._notes = {"KOX": "위키백과 3개월 9,352회 조회"}
+        p = place("경복궁", cid="KOX")
+        assert "9,352" in popular_note(p)
+
+    def test_모르면_모른다고_한다(self):
+        from weatherfit import popularity
+        from weatherfit.quality import popular_note
+        popularity._notes = {}
+        assert "자료 없음" in popular_note(place("무명", cid="KOY"))

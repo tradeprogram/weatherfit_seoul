@@ -199,7 +199,7 @@ web/
   style.css      밝은 낮의 서울 — 글라스모피즘
   sw.js          로밍 중에도 앱이 열리게. 판정 결과만은 캐시하지 않는다
   vendor/        Leaflet (CDN 의존을 없애기 위해 동봉)
-tests/           203개. 실제로 났던 회귀를 그대로 박아 둔다
+tests/           205개. 실제로 났던 회귀를 그대로 박아 둔다
 ```
 
 자세한 설계 판단은 [ARCHITECTURE.md](ARCHITECTURE.md).

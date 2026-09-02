@@ -120,6 +120,16 @@ W_POPULAR = 0.25   # 실제로 알려진 곳인가 (위키 조회수 등)
 W_TASTE = 0.20     # 이 사용자의 취향인가
 
 
+def popular_note(place: Place) -> str:
+    """왜 '알려진 곳'인지 숫자로 말한다.
+
+    막대 길이만 보여 주면 근거가 아니라 장식이다. 어디서 온 몇이라는
+    말이 있어야 사용자가 우리 판단을 검증할 수 있다.
+    """
+    from .popularity import notes
+    return notes().get(place.cid, "자료 없음 — 충실도로 대신")
+
+
 def explain(place: Place, origin, taste=None, pop: dict | None = None) -> dict:
     """이 장소가 왜 뽑혔는지 항목별로 나눠 준다.
 
@@ -148,7 +158,7 @@ def explain(place: Place, origin, taste=None, pop: dict | None = None) -> dict:
          "weight": W_QUALITY, "note": _quality_note(place)},
         {"key": "popular", "label": "알려진 곳", "value": round(popular, 2),
          "weight": W_POPULAR,
-         "note": "위키백과 조회수 기준" if not estimated else "자료 없음 — 충실도로 대신"},
+         "note": popular_note(place)},
     ]
     if taste is not None and not taste.is_empty:
         parts.append({"key": "taste", "label": "취향 일치",
