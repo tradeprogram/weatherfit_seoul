@@ -1030,7 +1030,28 @@ function init() {
   } catch (e) { /* 무시 */ }
 }
 
+/* 서비스 워커 — 로밍 중에 앱 껍데기가 안 열리면 보관함의 일정도 못 본다.
+   등록에 실패해도 앱은 그대로 돌아야 하므로 조용히 넘어간다. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
+/* 연결이 끊기면 알린다. 판정은 캐시하지 않으므로 새 일정은 못 짜지만,
+   보관함에 저장해 둔 일정은 그대로 볼 수 있다. */
+function watchConnection() {
+  const tell = () => {
+    const off = !navigator.onLine;
+    $('#offline-bar').hidden = !off;
+    document.body.classList.toggle('is-offline', off);
+  };
+  window.addEventListener('online', tell);
+  window.addEventListener('offline', tell);
+  tell();
+}
+
 let booted = false;
-function bootOnce() { if (!booted) { booted = true; init(); } }
+function bootOnce() { if (!booted) { booted = true; init(); watchConnection(); } }
 document.addEventListener('DOMContentLoaded', bootOnce);
 if (document.readyState !== 'loading') bootOnce();

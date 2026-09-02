@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="웨더핏 서울">
 <meta name="description" content="오늘 날씨에, 지금 열려 있는 곳만 골라 짜는 서울 반나절 코스">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=48">
+<link rel="stylesheet" href="style.css?v=49">
 </head>
 <body>
 
@@ -167,6 +167,11 @@
   <button class="glass" id="btn-me" title="내 위치로">내 위치</button>
 </div>
 
+<div class="offline-bar" id="offline-bar" role="status" hidden>
+  연결이 끊겼습니다. 새 일정은 짤 수 없지만 <b>보관함</b>에 저장해 둔 일정은
+  그대로 보실 수 있습니다.
+</div>
+
 <div class="legend glass">
   <div class="legend-head">일정</div>
   <div class="legend-row"><span class="dot anchor"></span>오늘의 앵커</div>
@@ -233,6 +238,6 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=48"></script>
+<script src="app.js?v=49"></script>
 </body>
 </html>

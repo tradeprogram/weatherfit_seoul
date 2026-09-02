@@ -238,8 +238,12 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     # 취향으로 걸러낸 것(영구)과 이번 일정에서만 뺀 것(일회성)을 함께 제외한다
     skip = set(taste.disliked) if taste else set()
     skip |= (exclude or set())
+    # 머물 시간이 없는 곳은 일정이 아니다. 숙박은 반나절 코스의 목적지가
+    # 아니라 자는 곳이라 체류시간이 0인데, 그대로 두면 "16:16 도착 16:16
+    # 출발"짜리 항목이 붙는다. 주변 목록에서는 그대로 보인다.
     pool = [(p, r) for p, r in passing(places, when, weather)
             if p.lat and p.lon and is_touristic(p) and p.cid not in skip
+            and dwell_minutes(p) >= MIN_USEFUL_DWELL
             and not any(a in (p.content.category_path or p.content.category)
                         for a in avoid)]
     if not pool:

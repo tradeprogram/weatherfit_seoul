@@ -183,3 +183,18 @@ class TestSerialization:
         assert d["total_min"] == d["travel_min"] + d["dwell_min"]
         for s in d["steps"]:
             assert s["arrive"] and s["depart"]
+
+
+class TestUselessStops:
+    def test_체류시간이_0인_곳은_넣지_않는다(self):
+        """숙박은 반나절 코스의 목적지가 아니다. 그대로 두면
+        '16:16 도착 16:16 출발'짜리 항목이 붙는다."""
+        hotel = place("아무개 호텔", category="숙박")
+        c = build_course([hotel], NOON, CLEAR, origin=(37.5665, 126.9780),
+                         budget_min=300)
+        assert c.steps == []
+
+    def test_주변_목록에서는_지우지_않는다(self):
+        """일정에 안 넣는 것과 목록에서 지우는 것은 다르다."""
+        from weatherfit.quality import is_touristic
+        assert is_touristic(place("아무개 호텔", category="숙박")) is True

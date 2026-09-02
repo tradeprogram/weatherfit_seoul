@@ -615,3 +615,11 @@ input:focus,select:focus{background:#fff}
   font-size:15px;color:var(--ink-3);line-height:1}
 .vault-del:hover{background:rgba(209,84,63,.12);color:var(--warn)}
 .vault-empty{font-size:11.5px;color:var(--ink-3);padding:10px 2px;line-height:1.6}
+
+/* ═════════ 연결 끊김 ═════════ */
+.offline-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;
+  z-index:60;max-width:520px;padding:10px 16px;border-radius:12px;
+  font-size:12.5px;line-height:1.5;color:#7a4a12;
+  background:rgba(255,238,214,.97);border:1px solid rgba(214,150,60,.5);
+  box-shadow:0 6px 20px rgba(31,45,61,.18)}
+.offline-bar[hidden]{display:none}

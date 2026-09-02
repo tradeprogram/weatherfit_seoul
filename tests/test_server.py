@@ -319,3 +319,20 @@ class TestChatIntentDetail:
         first = rich["reply"].splitlines()[0]
         assert first != plain
         assert "북촌" in first and "음식" in first
+
+
+class TestOffline:
+    def test_서비스_워커를_서빙한다(self, client):
+        r = client.get("/sw.js")
+        assert r.status_code == 200
+        assert "weatherfit-v1" in r.text
+
+    def test_판정_결과는_캐시하지_않는다(self, client):
+        """어제의 '열려 있음'을 오늘 답으로 주면 이 앱의 존재 이유가 사라진다."""
+        sw = client.get("/sw.js").text
+        assert "/api/" in sw and "캐시하지 않는다" in sw
+
+    def test_껍데기를_미리_받아_둔다(self, client):
+        sw = client.get("/sw.js").text
+        for asset in ("index.html", "style.css", "app.js", "vendor/leaflet.js"):
+            assert asset in sw
