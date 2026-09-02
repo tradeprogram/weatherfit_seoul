@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=47">
+<link rel="stylesheet" href="style.css?v=48">
 </head>
 <body>
 
@@ -108,7 +108,12 @@
     </div>
 
     <div class="plan-head" id="plan-head" aria-live="polite"></div>
-    <button class="share-btn" id="share-btn">🔗 이 일정 공유하기</button>
+    <div class="plan-acts">
+      <button id="save-btn">💾 저장</button>
+      <button id="share-btn">🔗 공유</button>
+      <button id="vault-btn">📁 보관함<span id="vault-count"></span></button>
+    </div>
+    <div class="vault" id="vault" hidden></div>
     <ol class="timeline" id="timeline" aria-label="일정 순서"></ol>
     <div id="backup"></div>
     <div class="notes" id="plan-notes" role="status"></div>
@@ -223,6 +228,6 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=47"></script>
+<script src="app.js?v=48"></script>
 </body>
 </html>

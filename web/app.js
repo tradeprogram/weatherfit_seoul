@@ -8,6 +8,7 @@ const ROLE_NAME  = { anchor:'앵커', food:'식사·카페', spot:'둘러보기'
 const LS_KEY = 'weatherfit.origin';
 const LS_TASTE = 'weatherfit.taste';
 const LS_LANG = 'weatherfit.lang';
+const LS_VAULT = 'weatherfit.vault';
 
 const S = {
   lat:CITY_HALL[0], lon:CITY_HALL[1], accuracy:null, where:null, precise:false,
@@ -664,6 +665,82 @@ async function send(text) {
   }
 }
 
+/* ───────────────────────── 보관함 ─────────────────────────
+   짠 일정을 브라우저에 남긴다. 서버에는 아무것도 보내지 않는다. */
+
+function vaultLoad() {
+  try { return JSON.parse(localStorage.getItem(LS_VAULT) || '[]'); }
+  catch (e) { return []; }
+}
+
+function vaultSave(list) {
+  try { localStorage.setItem(LS_VAULT, JSON.stringify(list.slice(0, 20))); }
+  catch (e) { toast('저장 공간이 부족합니다'); }
+}
+
+function savePlan() {
+  const c = S.course;
+  if (!c || !c.steps.length) return toast('저장할 일정이 없습니다');
+  const list = vaultLoad();
+  const item = {
+    id: Date.now(),
+    where: (S.where && S.where.label) || '서울',
+    when: c.start, end: c.end, at: S.at, hours: S.hours, mode: S.mode,
+    lat: S.lat, lon: S.lon, lang: S.lang, interests: S.interests,
+    titles: c.steps.map(s => s.title),
+    saved: new Date().toISOString().slice(0, 16).replace('T', ' '),
+  };
+  list.unshift(item);
+  vaultSave(list);
+  renderVault();
+  toast('일정을 저장했습니다');
+}
+
+function renderVault() {
+  const list = vaultLoad();
+  $('#vault-count').textContent = list.length ? ` ${list.length}` : '';
+  const box = $('#vault');
+  if (!list.length) {
+    box.innerHTML = '<p class="vault-empty">저장한 일정이 없습니다. ' +
+      '마음에 드는 일정을 만든 뒤 저장을 눌러 보세요.</p>';
+    return;
+  }
+  box.innerHTML = list.map(v => `
+    <div class="vault-item" data-id="${v.id}">
+      <div class="vault-body">
+        <b>${esc(v.where)} · ${esc(v.when)}–${esc(v.end)}</b>
+        <small>${esc(v.titles.join(' → '))}</small>
+      </div>
+      <button class="vault-del" data-id="${v.id}" aria-label="삭제">×</button>
+    </div>`).join('');
+  $$('#vault .vault-item').forEach(el => el.onclick = e => {
+    if (e.target.closest('.vault-del')) return;
+    restorePlan(+el.dataset.id);
+  });
+  $$('#vault .vault-del').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    vaultSave(vaultLoad().filter(v => v.id !== +b.dataset.id));
+    renderVault();
+  });
+}
+
+function restorePlan(id) {
+  const v = vaultLoad().find(x => x.id === id);
+  if (!v) return;
+  S.lat = v.lat; S.lon = v.lon; S.at = v.at; S.hours = v.hours;
+  S.mode = v.mode; S.lang = v.lang || 'ko'; S.interests = v.interests || [];
+  if (v.at) $('#at').value = v.at;
+  $$('#hours-seg button').forEach(b => b.classList.toggle('on', +b.dataset.h === S.hours));
+  $$('#mode-seg button').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
+  $$('#interests button').forEach(b =>
+    b.classList.toggle('on', S.interests.includes(b.dataset.i)));
+  $('#vault').hidden = true;
+  $('#vault-btn').classList.remove('on');
+  refreshWhere();
+  refresh();
+  toast('저장한 일정을 불러왔습니다');
+}
+
 /* ───────────────────────── 공유 ───────────────────────── */
 
 function planUrl() {
@@ -816,6 +893,12 @@ function bindUI() {
     refresh();
   });
   $('#share-btn').onclick = share;
+  $('#save-btn').onclick = savePlan;
+  $('#vault-btn').onclick = e => {
+    const on = e.currentTarget.classList.toggle('on');
+    $('#vault').hidden = !on;
+    if (on) renderVault();
+  };
   $('#taste-reset').onclick = () => {
     S.taste = null; S.interests = []; S.exclude = [];
     $$('#interests button').forEach(b => b.classList.remove('on'));
@@ -899,6 +982,7 @@ function init() {
     }
   } catch (e) { /* 무시 */ }
   bindUI();
+  renderVault();
   syncLanguages();
   if (readUrlState()) {
     applyUrlOptions();

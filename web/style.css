@@ -583,3 +583,27 @@ input:focus,select:focus{background:#fff}
   line-height:1.35}
 .why-foot{font-size:10.5px!important;color:var(--ink-3)!important;
   margin-top:9px!important;line-height:1.5!important}
+
+/* ═════════ 일정 보관함 ═════════ */
+.plan-acts{display:flex;gap:6px;margin-bottom:12px;flex:0 0 auto}
+.plan-acts button{flex:1;padding:9px 6px;border-radius:11px;font-size:12px;
+  font-weight:600;color:var(--primary);background:rgba(255,255,255,.78);
+  border:1px solid var(--glass-edge)}
+.plan-acts button:hover{background:#fff;border-color:var(--primary)}
+.plan-acts button.on{background:var(--primary);color:#fff;border-color:transparent}
+#vault-count{font-size:10px;margin-left:3px;opacity:.75}
+
+.vault{flex:0 0 auto;margin-bottom:12px}
+.vault[hidden]{display:none}
+.vault-item{display:flex;align-items:center;gap:9px;padding:9px 11px;
+  margin-bottom:6px;border-radius:11px;cursor:pointer;
+  background:rgba(255,255,255,.78);border:1px solid var(--glass-edge)}
+.vault-item:hover{background:#fff;border-color:var(--primary)}
+.vault-body{flex:1;min-width:0}
+.vault-body b{display:block;font-size:12.5px;line-height:1.35}
+.vault-body small{display:block;font-size:10.5px;color:var(--ink-3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vault-del{flex:0 0 auto;width:24px;height:24px;border-radius:50%;
+  font-size:15px;color:var(--ink-3);line-height:1}
+.vault-del:hover{background:rgba(209,84,63,.12);color:var(--warn)}
+.vault-empty{font-size:11.5px;color:var(--ink-3);padding:10px 2px;line-height:1.6}
