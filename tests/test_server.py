@@ -249,3 +249,26 @@ class TestStatic:
 
     def test_매니페스트가_있다(self, client):
         assert client.get("/manifest.webmanifest").status_code == 200
+
+
+class TestLanguages:
+    def test_한국어는_언제나_있다(self, client):
+        assert "ko" in client.get("/api/health").json()["languages"]
+
+    def test_절반도_못_채운_어권은_켜지_않는다(self, client):
+        """전환했는데 대부분 한국어가 그대로 나오면 '지원한다'가 거짓말이다."""
+        d = client.get("/api/health").json()
+        cov = d["language_coverage"]
+        for lang in d["languages"]:
+            if lang == "ko":
+                continue
+            assert cov[lang] >= 0.5
+
+    def test_켜진_어권은_실제로_번역이_나온다(self, client):
+        d = client.get("/api/health").json()
+        for lang in d["languages"]:
+            if lang == "ko":
+                continue
+            plan = client.post("/api/plan", json={**SEOUL, "hours": 4,
+                                                  "at": AT, "lang": lang}).json()
+            assert any(s["text_lang"] == lang for s in plan["steps"])

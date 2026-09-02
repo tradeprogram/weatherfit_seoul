@@ -34,6 +34,9 @@ from .routing import haversine_m, router
 from .validate import Weather, check_period, evaluate_place
 from .weather import SEOUL_CITY_HALL, get_weather
 
+# 이 비율을 넘겨야 그 어권을 '지원한다'고 말한다
+LANG_MIN_COVERAGE = 0.5
+
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
 
@@ -117,7 +120,13 @@ def health():
         "dong_matched": idx.dong_matched,
         "built_at": idx.built_at,
         "build_ms": idx.build_ms,
-        "languages": ["ko"] + sorted(idx.translated),
+        # 절반도 못 채운 어권은 켜지 않는다. 전환해 봐야 대부분 한국어가
+        # 그대로 나오면 "지원한다"는 말이 거짓말이 된다.
+        "languages": ["ko"] + sorted(
+            l for l, n in idx.translated.items()
+            if n >= len(idx.places) * LANG_MIN_COVERAGE),
+        "language_coverage": {l: round(n / max(len(idx.places), 1), 3)
+                              for l, n in sorted(idx.translated.items())},
         "translated": idx.translated,
         "keys": {
             "visitseoul_api": bool(os.environ.get("VISITSEOUL_API_KEY")),
