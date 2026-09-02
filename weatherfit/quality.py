@@ -120,6 +120,60 @@ W_POPULAR = 0.25   # 실제로 알려진 곳인가 (위키 조회수 등)
 W_TASTE = 0.20     # 이 사용자의 취향인가
 
 
+def explain(place: Place, origin, taste=None, pop: dict | None = None) -> dict:
+    """이 장소가 왜 뽑혔는지 항목별로 나눠 준다.
+
+    "AI가 골랐습니다"는 설명이 아니다. 무엇을 보고 골랐는지 말할 수 있어야
+    사용자가 판단을 검증하고, 마음에 안 들면 무엇을 바꿔야 할지 안다.
+    """
+    from .routing import haversine_m
+
+    if pop is None:
+        from .popularity import scores as _pop
+        pop = _pop()
+
+    d = haversine_m(*origin, place.lat, place.lon) if origin else 0.0
+    near = max(0.0, 1.0 - d / 2000.0)
+    q = quality(place)
+    popular = pop.get(place.cid, 0.0)
+    estimated = popular == 0.0
+    if estimated:
+        popular = q * 0.6
+    aff = taste.affinity(place) if taste is not None else 0.0
+
+    parts = [
+        {"key": "near", "label": "가까움", "value": round(near, 2),
+         "weight": W_NEAR, "note": f"{round(d)}m"},
+        {"key": "quality", "label": "정보 충실", "value": round(q, 2),
+         "weight": W_QUALITY, "note": _quality_note(place)},
+        {"key": "popular", "label": "알려진 곳", "value": round(popular, 2),
+         "weight": W_POPULAR,
+         "note": "위키백과 조회수 기준" if not estimated else "자료 없음 — 충실도로 대신"},
+    ]
+    if taste is not None and not taste.is_empty:
+        parts.append({"key": "taste", "label": "취향 일치",
+                      "value": round(aff, 2), "weight": W_TASTE,
+                      "note": taste.describe()})
+    total = sum(p["value"] * p["weight"] for p in parts)
+    return {"score": round(total, 3), "parts": parts}
+
+
+def _quality_note(place: Place) -> str:
+    c = place.content
+    got = []
+    if len(c.description or "") > 300:
+        got.append("설명 상세")
+    if len(c.tags) >= 4:
+        got.append("태그 다수")
+    if c.accessibility:
+        got.append("무장애 정보")
+    if c.homepage:
+        got.append("홈페이지")
+    if place.hours.confidence == "high":
+        got.append("운영시간 확정")
+    return " · ".join(got) or "기본 정보만"
+
+
 def rank(cands, origin, taste=None, pop: dict | None = None):
     """거리 · 품질 · 인기 · 취향을 합쳐 정렬한다.
 

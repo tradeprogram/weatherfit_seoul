@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from .index import Place
-from .quality import Diversity, is_touristic, radius_for, rank
+from .quality import Diversity, explain, is_touristic, radius_for, rank
 from .taste import Taste
 from .routing import haversine_m, router
 from .validate import Weather, check_hours, evaluate_place, parse_ymd
@@ -59,6 +59,7 @@ class Step:
     travel: dict | None = None      # 앞 장소에서 여기까지
     ends_today: bool = False
     hours_assumed: bool = False     # 운영정보가 없어 일반 시간대로 가정했는가
+    why: dict | None = None         # 왜 이 장소가 뽑혔는지 항목별 근거
 
     def to_dict(self, lang: str = "ko") -> dict:
         i = self.place.content
@@ -84,6 +85,7 @@ class Step:
             "walk_min": (self.travel or {}).get("walk", {}).get("minutes"),
             "ends_today": self.ends_today,
             "hours_assumed": self.hours_assumed,
+            "why": self.why,
         }
 
 
@@ -313,6 +315,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
             ends_today=(_days_left(place, today) == 0
                         and place.content.is_short_event),
         )
+        step.why = explain(place, origin, taste)
         course.steps.append(step)
         used.add(place.cid)
         diversity.add(place)

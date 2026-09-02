@@ -460,6 +460,26 @@ function renderEvidence() {
     </div>` : ''}`;
 }
 
+/** 추천 근거를 항목별로 보여 준다.
+    "AI가 골랐습니다"는 설명이 아니다. 무엇을 보고 골랐는지 말할 수 있어야
+    사용자가 판단을 검증하고, 마음에 안 들면 무엇을 바꿀지 안다. */
+function whyBlock(c) {
+  const w = c.why;
+  if (!w || !w.parts) return '';
+  const rows = w.parts.map(p => {
+    const pct = Math.max(0, Math.min(100, p.value * 100));
+    const share = Math.round(p.weight * 100);
+    return `<div class="why-row">
+      <span class="why-lab">${esc(p.label)}<em>${share}%</em></span>
+      <span class="why-track"><span class="why-fill" style="width:${pct}%"></span></span>
+      <span class="why-note">${esc(p.note || '')}</span>
+    </div>`;
+  }).join('');
+  return `<div class="d-sec"><h4>선정 근거</h4>${rows}
+    <p class="why-foot">거리·정보 충실도·알려진 정도·취향을 섞어 고릅니다.
+      어느 하나가 전부를 결정하지 않습니다.</p></div>`;
+}
+
 function renderDetail(c) {
   if (!c || !c.cid) return;
   $('#detail-panel').hidden = false;
@@ -484,6 +504,7 @@ function renderDetail(c) {
     <div class="verdict ${vClass}"><div><b>${esc(c.verdict || '통과')}</b>
       <small>${esc(c.reason || c.verdict_reason || '')}</small></div></div>
     ${c.line ? `<div class="d-sec"><h4>왜 여기</h4><p>${esc(c.line)}</p></div>` : ''}
+    ${whyBlock(c)}
     ${legs ? `<div class="d-sec"><h4>가는 길</h4>${legs}</div>` : ''}
     ${c.summary ? `<div class="d-sec"><h4>요약</h4><p>${esc(c.summary)}</p></div>` : ''}
     <div class="d-sec"><h4>분류</h4><p>${esc(c.category_path || c.category || '')}
