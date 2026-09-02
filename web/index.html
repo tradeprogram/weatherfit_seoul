@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>웨더핏 서울 — 오늘 날씨에, 지금 열려 있는 곳만</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+
+<header>
+  <div class="head-left">
+    <h1>웨더핏 서울</h1>
+    <p class="sub">오늘 날씨에, 지금 열려 있는 곳만 골라 짜는 AI 서울 코스</p>
+  </div>
+  <div class="head-right">
+    <div class="wx" id="wx">
+      <span class="wx-icon" id="wx-icon">☀</span>
+      <div class="wx-text">
+        <b id="wx-desc">불러오는 중</b>
+        <small id="wx-src"></small>
+      </div>
+    </div>
+    <div class="stats" id="head-stats"></div>
+  </div>
+</header>
+
+<main>
+  <!-- ─────────── 좌측: 조건 + 후보 ─────────── -->
+  <aside class="panel left">
+    <div class="ctl">
+      <label class="ctl-label">날씨 시나리오</label>
+      <div class="seg" id="mode-seg">
+        <button data-mode="auto" class="on">실시간</button>
+        <button data-mode="clear">맑음</button>
+        <button data-mode="rain">비</button>
+        <button data-mode="heat">폭염</button>
+      </div>
+    </div>
+
+    <div class="ctl">
+      <label class="ctl-label" for="at">기준 시각</label>
+      <input type="datetime-local" id="at">
+    </div>
+
+    <div class="ctl">
+      <label class="ctl-label">출발 위치</label>
+      <div class="origin-row">
+        <select id="origin"></select>
+        <button id="locate" title="현재 위치 사용">현위치</button>
+      </div>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button data-tab="course" class="on">코스</button>
+      <button data-tab="list">후보</button>
+      <button data-tab="evidence">근거</button>
+    </div>
+
+    <!-- 코스 -->
+    <div class="pane" id="pane-course">
+      <div class="chat">
+        <input id="chat-input" type="text"
+               placeholder="예: 비 오는데 강남에서 3시간" autocomplete="off">
+        <button id="chat-send">코스 짜기</button>
+      </div>
+      <p class="hint" id="chat-understood"></p>
+      <ol class="course" id="course-list"></ol>
+      <div class="notes" id="course-notes"></div>
+    </div>
+
+    <!-- 후보 -->
+    <div class="pane" id="pane-list" hidden>
+      <p class="hint" id="list-summary"></p>
+      <div class="filters" id="cat-filters"></div>
+      <ul class="cand" id="cand-list"></ul>
+    </div>
+
+    <!-- 근거 -->
+    <div class="pane" id="pane-evidence" hidden>
+      <p class="hint">비짓서울 API 데이터를 실제로 수집·정규화해 측정한 값입니다.
+        제안서의 근거 수치와 동일한 계산을 씁니다.</p>
+      <div id="evidence"></div>
+    </div>
+  </aside>
+
+  <!-- ─────────── 중앙: 지도 ─────────── -->
+  <section class="map-wrap">
+    <div id="map"></div>
+    <div class="map-ctl">
+      <button data-layer="dong" class="on" id="btn-dong">행정동 경계</button>
+      <button data-layer="all" id="btn-all">전체 후보</button>
+    </div>
+    <button class="help-btn" id="help-btn">이용 안내</button>
+    <div class="legend">
+      <div class="legend-head">범례</div>
+      <div class="legend-row"><span class="dot anchor"></span>오늘의 행사 (앵커)</div>
+      <div class="legend-row"><span class="dot food"></span>도보권 로컬 음식</div>
+      <div class="legend-row"><span class="dot shelter"></span>날씨 대비 실내 대안</div>
+      <div class="legend-row"><span class="dot cand"></span>그 밖의 통과 후보</div>
+      <div class="legend-note">비·폭염일 때 실외 장소는 후보에서 빠집니다.</div>
+    </div>
+
+    <div class="help-overlay" id="help-overlay" hidden>
+      <div class="help-card">
+        <div class="help-head">
+          <h2>이용 안내</h2>
+          <button id="help-close">닫기</button>
+        </div>
+        <h3>이 서비스가 하는 일</h3>
+        <p>비짓서울 API의 관광 콘텐츠에 <b>‘지금 갈 수 있는가’를 판정하는 계층</b>을
+          얹었습니다. 이미 끝난 행사, 오늘 휴무인 곳, 지금 날씨에 무리인 야외 장소를
+          걸러낸 뒤 남은 것으로만 반나절 코스를 만듭니다.</p>
+
+        <h3>판정 단계</h3>
+        <table class="help-table">
+          <tr><td><b>기간</b></td><td>종료된 행사인가</td></tr>
+          <tr><td><b>날씨</b></td><td>지금 날씨에 실외를 권할 수 있는가</td></tr>
+          <tr><td><b>운영</b></td><td>오늘 휴무이거나 영업시간 밖인가</td></tr>
+          <tr><td><b>거리</b></td><td>도보권 안에 있는가</td></tr>
+        </table>
+
+        <h3>‘판정 불가’를 따로 두는 이유</h3>
+        <p>이용시간이 자유 문장이라 기계가 읽을 수 없는 경우가 많습니다. 모르는 것을
+          ‘열려 있다’로 처리하면 헛걸음이 생기고 ‘닫혔다’로 처리하면 멀쩡한 후보가
+          사라집니다. 그래서 <b>탈락과 판정 불가를 구분</b>하고, 근거 탭에서 그 비율을
+          그대로 보여줍니다.</p>
+
+        <h3>데이터</h3>
+        <p>관광 콘텐츠 비짓서울 API · 행정동 경계 통계청 · 기상 기상청 초단기실황.
+          기상청 키가 없으면 기본값으로 판정하며, 화면 상단에 출처가 표시됩니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 우측: 상세 ─────────── -->
+  <aside class="panel right">
+    <h2 id="detail-title">장소를 선택하세요</h2>
+    <div id="detail">
+      <p class="hint">지도의 표시나 왼쪽 목록에서 장소를 고르면
+        판정 근거와 원문 운영정보가 여기 표시됩니다.</p>
+    </div>
+  </aside>
+</main>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>

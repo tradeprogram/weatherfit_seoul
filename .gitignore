@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+
+# 수집 원본은 재현 가능하므로 저장소에 넣지 않는다 (python -m weatherfit.collect --all)
+data/raw/
+data/report.md
+
+# 행정동 경계는 빌드 산출물 (python -c "from weatherfit.geo import build_seoul_geojson; ...")
+web/data/seoul_dong.geojson

@@ -1,0 +1,11 @@
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.6
+
+# 행정동 경계 처리용 (지도·분산 지표). 없으면 경계 관련 기능만 비활성화된다.
+geopandas>=0.14
+shapely>=2.0
+pyproj>=3.6
