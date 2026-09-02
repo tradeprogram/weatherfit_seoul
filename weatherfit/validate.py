@@ -114,7 +114,8 @@ def evaluate(item: Content, when: datetime, weather: Weather) -> tuple[Verdict, 
     """한 건에 대한 최종 판정과 중간 근거. 정규화를 매번 다시 한다."""
     hours = parse_hours(item.use_time_raw, item.closed_days_raw)
     environment, env_reason = tag_environment(
-        item.category, item.title, item.description, item.tags
+        item.category, item.title, item.description, item.tags,
+        item.category_path
     )
     return _judge(item, hours, environment, env_reason, when, weather)
 

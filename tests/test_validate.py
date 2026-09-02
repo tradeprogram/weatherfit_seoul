@@ -6,9 +6,11 @@
 """
 from datetime import date, datetime
 
+import pytest
+
 from weatherfit.models import Content
 from weatherfit.validate import (Weather, check_period, check_weather,
-                                 evaluate, parse_ymd)
+                                 evaluate, evaluate_place, parse_ymd)
 
 WHEN = datetime(2026, 9, 2, 14, 0)
 TODAY = WHEN.date()
@@ -111,3 +113,34 @@ class TestShortEvent:
         c = content(schedule_start="2026.09.01", schedule_end="2026.09.06")
         assert c.is_short_event is True
         assert c.run_days == 6
+
+
+class TestPathsAgree:
+    """같은 콘텐츠를 어느 경로로 판정하든 결과가 같아야 한다.
+
+    evaluate()(단건)와 evaluate_place()(적재 인덱스)가 tag_environment에
+    category_path를 넘기는지 여부로 갈렸다. 그래서 근거 리포트가 실내외
+    불명을 27.7%로 냈다 — 실제는 6.9%다. 제안서에 싣는 수치가 어느 함수를
+    부르느냐에 따라 네 배 달라지면 안 된다.
+    """
+
+    @pytest.mark.parametrize("category,path,title", [
+        ("문화관광", "문화관광 > 전시시설", "《안식의 결 Texture of Rest》"),
+        ("문화관광", "문화관광 > 도시공원", "아무개 근린공원"),
+        ("축제/공연/행사", "축제/공연/행사 > 축제", "아무개 축제"),
+        ("축제/공연/행사", "축제/공연/행사 > 행사 > 전시회", "아무개 전시회"),
+    ])
+    def test_단건과_인덱스가_같은_실내외를_낸다(self, category, path, title):
+        from weatherfit.index import build_index
+
+        c = Content(cid="KO1", title=title, category=category,
+                    category_path=path, use_time_raw="매일 09:00~18:00",
+                    lat=37.5665, lon=126.9780)
+        when = datetime(2026, 9, 3, 12, 0)
+        w = Weather(temp_c=22.0)
+
+        _, single = evaluate(c, when, w)
+        place = build_index([c]).places[0]
+        _, indexed = evaluate_place(place, when, w)
+        assert single["environment"] == indexed["environment"]
+        assert single["environment"] != "unknown"

@@ -104,7 +104,8 @@ def build(items: list[Content], when: datetime, weather: Weather) -> str:
     L += ["## 2. 실내·실외, API에 없는 필드 만들기", ""]
     env = Counter()
     for i in items:
-        label, _ = tag_environment(i.category, i.title, i.description, i.tags)
+        label, _ = tag_environment(i.category, i.title, i.description, i.tags,
+                                   i.category_path)
         env[label] += 1
     L += _table(
         [(k, env[k], _pct(env[k], total)) for k in ("indoor", "outdoor", "unknown")],
