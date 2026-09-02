@@ -228,9 +228,29 @@ class ChatIn(BaseModel):
 
 _GU_RE = re.compile(r"(종로|중구|용산|성동|광진|동대문|중랑|성북|강북|도봉|노원|은평|"
                     r"서대문|마포|양천|강서|구로|금천|영등포|동작|관악|서초|강남|송파|강동)")
+
+# 사람들은 자치구가 아니라 동네 이름으로 말한다
+LANDMARKS = {
+    "홍대": (37.5570, 126.9245), "합정": (37.5495, 126.9137),
+    "연남": (37.5601, 126.9256), "성수": (37.5445, 127.0557),
+    "건대": (37.5403, 127.0695), "명동": (37.5636, 126.9827),
+    "인사동": (37.5735, 126.9860), "북촌": (37.5826, 126.9830),
+    "익선동": (37.5732, 126.9905), "을지로": (37.5660, 126.9910),
+    "이태원": (37.5346, 126.9946), "한남": (37.5343, 127.0016),
+    "여의도": (37.5215, 126.9243), "잠실": (37.5133, 127.1000),
+    "가로수길": (37.5205, 127.0230), "압구정": (37.5271, 127.0286),
+    "청담": (37.5250, 127.0530), "삼청동": (37.5825, 126.9810),
+    "동대문": (37.5654, 127.0090), "남산": (37.5512, 126.9882),
+    "서울숲": (37.5443, 127.0374), "DDP": (37.5665, 127.0093),
+    "경복궁": (37.5796, 126.9770), "광화문": (37.5720, 126.9769),
+    "신촌": (37.5551, 126.9368), "강남역": (37.4979, 127.0276),
+}
+_LANDMARK_RE = re.compile("(" + "|".join(sorted(LANDMARKS, key=len, reverse=True)) + ")")
+
 _HOUR_RE = re.compile(r"(\d+)\s*시간")
-_RAIN_WORDS = ("비", "우천", "소나기", "장마")
-_HEAT_WORDS = ("더위", "폭염", "무더")
+_RAIN_WORDS = ("비 ", "비가", "비오", "비 오", "우천", "소나기", "장마", "빗")
+_HEAT_WORDS = ("더위", "더운", "덥", "폭염", "무더")
+_COLD_WORDS = ("추위", "추운", "춥", "한파")
 
 
 @app.post("/api/chat")
@@ -240,28 +260,28 @@ def chat(body: ChatIn):
     mode = body.mode
     if any(k in msg for k in _RAIN_WORDS):
         mode = "rain"
-    elif any(k in msg for k in _HEAT_WORDS):
-        mode = "heat"
+    elif any(k in msg for k in _HEAT_WORDS) or any(k in msg for k in _COLD_WORDS):
+        mode = "heat" if any(k in msg for k in _HEAT_WORDS) else "auto"
 
     max_walk = 25
     if (m := _HOUR_RE.search(msg)):
         # 남은 시간이 짧으면 도보 반경을 줄인다
         max_walk = max(10, min(40, int(m.group(1)) * 10))
 
-    lat, lon = body.lat, body.lon
-    area = None
-    if (m := _GU_RE.search(msg)):
+    # 동네 이름을 먼저 본다. 자치구보다 좁고 사람들이 실제로 쓰는 말이다
+    lat, lon, area = body.lat, body.lon, None
+    if (m := _LANDMARK_RE.search(msg)):
         area = m.group(1)
-        center = _gu_center(area)
-        if center:
+        lat, lon = LANDMARKS[area]
+    elif (m := _GU_RE.search(msg)):
+        area = m.group(1) if m.group(1) == "중구" else m.group(1) + "구"
+        if (center := _gu_center(m.group(1))):
             lat, lon = center
 
     result = course(lat=lat, lon=lon, mode=mode, at=body.at,
                     max_walk_min=max_walk, explain=True)
     result["understood"] = {
-        "area": (area + "구") if area and area != "중구" else area,
-        "weather_mode": mode,
-        "max_walk_min": max_walk,
+        "area": area, "weather_mode": mode, "max_walk_min": max_walk,
     }
     return result
 

@@ -99,8 +99,14 @@ def passing(items: list[Content], when: datetime, weather: Weather):
 
 def build_course(items: list[Content], when: datetime, weather: Weather,
                  origin: tuple[float, float] | None = None,
-                 max_walk_min: int = 25, want_food: int = 2) -> Course:
-    """반나절 코스 하나를 만든다."""
+                 max_walk_min: int = 25, want_food: int = 2,
+                 area_radius_m: float = 4000.0) -> Course:
+    """반나절 코스 하나를 만든다.
+
+    `origin`이 주어지면 그 반경(`area_radius_m`) 안에서 앵커를 고른다.
+    "강남에서 3시간"이라고 했는데 성수 행사를 앵커로 잡으면 안 되기 때문이다.
+    반경 안에 아무것도 없으면 반경을 풀고 서울 전역에서 다시 찾는다.
+    """
     course = Course(weather=weather, when=when)
     today = when.date()
 
@@ -109,14 +115,30 @@ def build_course(items: list[Content], when: datetime, weather: Weather,
         course.notes.append("지금 조건에 맞는 장소를 찾지 못했습니다.")
         return course
 
-    events = [(i, e, r) for i, e, r in pool if i.is_short_event and i.lat and i.lon]
+    def near_origin(cands):
+        if not origin:
+            return cands
+        return [t for t in cands
+                if t[0].lat and t[0].lon
+                and haversine_m(*origin, t[0].lat, t[0].lon) <= area_radius_m]
+
+    all_events = [(i, e, r) for i, e, r in pool if i.is_short_event and i.lat and i.lon]
     foods = [(i, e, r) for i, e, r in pool if "음식" in (i.category_path or i.category)]
     indoors = [(i, e, r) for i, e, r in pool if e == "indoor" and i.lat and i.lon]
+
+    events = near_origin(all_events)
+    widened = False
+    if not events and all_events:
+        events, widened = all_events, True
 
     # ---- 앵커: 종료가 임박한 행사 우선 ----
     if events:
         events.sort(key=lambda t: _days_left(t[0], today) or 999)
         item, env, reason = events[0]
+        if widened:
+            course.notes.append(
+                f"근처 {int(area_radius_m / 1000)}km 안에 지금 열린 행사가 없어 "
+                "서울 전역에서 찾았습니다.")
         left = _days_left(item, today)
         anchor = Step(item, "anchor", env, reason, ends_today=(left == 0))
         course.steps.append(anchor)

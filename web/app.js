@@ -27,46 +27,50 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
 
 /* ───────────────────────── 지도 ───────────────────────── */
 
-function webglOK() {
-  try {
-    const c = document.createElement('canvas');
-    return !!(c.getContext('webgl2') || c.getContext('webgl'));
-  } catch (e) { return false; }
+// WebGL 가용 여부를 직접 탐지하면 일부 환경에서 렌더러가 멈춘다.
+// 지도를 그냥 만들어 보고, 정해진 시간 안에 load가 오지 않으면 대체 화면으로 바꾼다.
+function showMapFallback(why) {
+  if (mapReady) return;
+  const el = document.getElementById('map');
+  if (!el || el.querySelector('.map-fallback')) return;
+  el.innerHTML =
+    '<div class="map-fallback"><b>지도를 표시할 수 없습니다</b>' +
+    '<span>' + why + ' 코스·후보·근거는 왼쪽에서 그대로 확인할 수 있습니다.</span></div>';
 }
 
 let map = null;
-const mapAvailable = typeof maplibregl !== 'undefined' && webglOK();
-
-if (!mapAvailable) {
-  document.getElementById('map').innerHTML =
-    '<div class="map-fallback"><b>지도를 표시할 수 없습니다</b>' +
-    '<span>이 브라우저에서 WebGL을 사용할 수 없습니다. 코스·후보·근거는 왼쪽에서 그대로 확인할 수 있습니다.</span></div>';
-}
-
-if (mapAvailable) map = new maplibregl.Map({
-  container:'map',
-  style:{
-    version:8,
-    glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-    sources:{
-      carto:{
-        type:'raster',
-        tiles:['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'],
-        tileSize:256,
-        attribution:'&copy; OpenStreetMap contributors &copy; CARTO',
+try {
+  map = new maplibregl.Map({
+    container:'map',
+    style:{
+      version:8,
+      sources:{
+        carto:{
+          type:'raster',
+          tiles:['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'],
+          tileSize:256,
+          attribution:'&copy; OpenStreetMap contributors &copy; CARTO',
+        },
       },
+      layers:[{ id:'base', type:'raster', source:'carto' }],
     },
-    layers:[{ id:'base', type:'raster', source:'carto' }],
-  },
-  center:[126.9780, 37.5665], zoom:11.2, maxZoom:17, minZoom:9,
-});
-if (map) {
+    center:[126.9780, 37.5665], zoom:11.2, maxZoom:17, minZoom:9,
+  });
   map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
   map.on('error', e => console.warn('map:', e && e.error && e.error.message));
+} catch (e) {
+  console.warn('지도를 만들지 못했습니다', e);
+  map = null;
 }
 
 const EMPTY = { type:'FeatureCollection', features:[] };
 let mapReady = false;
+
+if (map) {
+  setTimeout(() => showMapFallback('지도를 불러오지 못했습니다.'), 9000);
+} else {
+  setTimeout(() => showMapFallback('이 브라우저에서 지도를 지원하지 않습니다.'), 0);
+}
 
 if (map) map.on('load', async () => {
   // 행정동 경계
@@ -100,11 +104,8 @@ if (map) map.on('load', async () => {
   map.addLayer({ id:'steps', type:'circle', source:'steps',
     paint:{ 'circle-radius':7, 'circle-color':['get','color'],
             'circle-stroke-width':1.5, 'circle-stroke-color':'#0d1117' }});
-  map.addLayer({ id:'steps-label', type:'symbol', source:'steps',
-    layout:{ 'text-field':['get','n'], 'text-size':11,
-             'text-font':['Open Sans Bold','Arial Unicode MS Bold'],
-             'text-allow-overlap':true },
-    paint:{ 'text-color':'#0d1117' }});
+  // 순번은 지도에 글자로 찍지 않는다. 글리프 서버가 하나 더 필요해지고,
+  // 코스 순서는 왼쪽 목록이 이미 번호로 보여 준다.
 
   for (const id of ['cands','steps']) {
     map.on('click', id, e => selectCid(e.features[0].properties.cid));
