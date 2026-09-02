@@ -8,5 +8,6 @@ venv/
 data/raw/
 data/report.md
 
-# 행정동 경계는 빌드 산출물 (python -c "from weatherfit.geo import build_seoul_geojson; ...")
-web/data/seoul_dong.geojson
+# 행정동 경계(web/data/seoul_dong.geojson)는 저장소에 포함한다.
+# 통계청 공개 데이터에서 서울만 추출한 1MB 파일이고, 이게 있어야
+# 클론 직후에 바로 지도가 뜬다. 재생성은 weatherfit.geo.build_seoul_geojson.
