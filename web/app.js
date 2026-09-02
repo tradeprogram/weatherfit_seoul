@@ -6,6 +6,8 @@ const CITY_HALL = [37.5665, 126.9780];
 const ROLE_COLOR = { anchor:'#f08a34', food:'#22a06b', spot:'#1f7ac4', shelter:'#7c62d8' };
 const ROLE_NAME  = { anchor:'앵커', food:'식사·카페', spot:'둘러보기', shelter:'플랜 B' };
 const LS_KEY = 'weatherfit.origin';
+const LS_TASTE = 'weatherfit.taste';
+const LS_LANG = 'weatherfit.lang';
 
 const S = {
   lat:CITY_HALL[0], lon:CITY_HALL[1], accuracy:null, where:null, precise:false,
@@ -13,6 +15,7 @@ const S = {
   course:null, candidates:[], stats:null,
   catFilter:null, selected:null, showAll:false,
   history:[], intent:null, busy:false,
+  interests:[], taste:null, lang:'ko', langsReady:['ko'],
 };
 
 const $  = s => document.querySelector(s);
@@ -74,7 +77,7 @@ async function getJSON(path, params = {}) {
 }
 
 const baseParams = () => {
-  const o = { lat:S.lat, lon:S.lon, mode:S.mode };
+  const o = { lat:S.lat, lon:S.lon, mode:S.mode, lang:S.lang };
   if (S.at) o.at = S.at;
   return o;
 };
@@ -159,11 +162,20 @@ async function refreshWhere() {
 
 /* ───────────────────────── 화면 갱신 ───────────────────────── */
 
+async function postJSON(path, body) {
+  const r = await fetch(path, { method:'POST',
+    headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) });
+  if (!r.ok) throw new Error(`${path} → ${r.status}`);
+  return r.json();
+}
+
 async function refresh() {
   setLoading(true);
   try {
     const [course, cands] = await Promise.all([
-      getJSON('/api/course', { ...baseParams(), hours:S.hours }),
+      postJSON('/api/plan', { lat:S.lat, lon:S.lon, mode:S.mode, at:S.at,
+                              hours:S.hours, interests:S.interests,
+                              taste:S.taste, lang:S.lang }),
       getJSON('/api/candidates', { ...baseParams(), radius_m:2500, limit:200 }),
     ]);
     S.course = course;
@@ -172,6 +184,7 @@ async function refresh() {
     renderHeadStats(cands);
     renderPlan();
     renderCandidates();
+    renderTaste();
     drawMap();
   } catch (e) {
     $('#plan-notes').innerHTML =
@@ -185,6 +198,60 @@ async function refresh() {
 
 function setLoading(on) {
   $('#pane-plan').classList.toggle('loading', on);
+}
+
+/* ───────────────────────── 취향 ───────────────────────── */
+
+function loadTaste() {
+  try { S.taste = JSON.parse(localStorage.getItem(LS_TASTE) || 'null'); }
+  catch (e) { S.taste = null; }
+}
+
+function saveTaste() {
+  try { localStorage.setItem(LS_TASTE, JSON.stringify(S.taste || {})); }
+  catch (e) { /* 무시 */ }
+}
+
+function renderTaste() {
+  const bar = $('#taste-bar');
+  const txt = (S.course && S.course.taste) || tasteSummary();
+  if (txt) { $('#taste-txt').textContent = '내 취향 · ' + txt; bar.hidden = false; }
+  else bar.hidden = true;
+}
+
+function tasteSummary() {
+  const t = S.taste;
+  if (!t) return '';
+  const cats = Object.entries(t.categories || {})
+    .filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => x[0]);
+  const tags = Object.entries(t.tags || {})
+    .filter(([, v]) => v > 0.4).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]);
+  const bits = [];
+  if (cats.length) bits.push(cats.join(' · '));
+  if (tags.length) bits.push(tags.map(x => '#' + x).join(' '));
+  return bits.join(' / ');
+}
+
+/** 좋아요·관심없음을 프로필에 반영한다. 서버에 저장하지 않고 화면이 들고 있는다. */
+function feedback(cid, kind) {
+  const step = (S.course?.steps || []).find(s => s.cid === cid)
+            || S.candidates.find(c => c.cid === cid);
+  if (!step) return;
+  const t = S.taste = S.taste || { categories:{}, tags:{}, liked:[], disliked:[] };
+  t.categories = t.categories || {}; t.tags = t.tags || {};
+  t.liked = t.liked || []; t.disliked = t.disliked || [];
+
+  const w = kind === 'like' ? 1.0 : -0.7;
+  const cat = step.category;
+  if (cat) t.categories[cat] = (t.categories[cat] || 0) + w;
+  (step.tags || []).slice(0, 12).forEach(tag => {
+    t.tags[tag] = (t.tags[tag] || 0) + w * 0.5;
+  });
+  const list = kind === 'like' ? t.liked : t.disliked;
+  if (!list.includes(cid)) list.push(cid);
+
+  saveTaste();
+  refresh();
 }
 
 /* ───────────────────────── 렌더 ───────────────────────── */
@@ -266,6 +333,10 @@ function renderPlan() {
           · ${ROLE_NAME[s.role] || ''} · ${s.dwell_min}분
           ${s.hours_assumed ? '<span class="warn-tag">시간 미상</span>' : ''}</div>
         <div class="l">${esc(s.line)}</div>
+        <div class="stop-acts">
+          <button data-act="like" data-cid="${esc(s.cid)}">👍 이런 곳 더</button>
+          <button class="no" data-act="skip" data-cid="${esc(s.cid)}">✕ 관심없음</button>
+        </div>
       </div>
     </li>`).join('');
 
@@ -280,7 +351,14 @@ function renderPlan() {
 
   notes.innerHTML = (c.notes || []).map(n => `<div>${esc(n)}</div>`).join('');
 
-  $$('#timeline .stop').forEach(li => li.onclick = () => selectCid(li.dataset.cid));
+  $$('#timeline .stop').forEach(li => li.onclick = e => {
+    if (e.target.closest('.stop-acts')) return;
+    selectCid(li.dataset.cid);
+  });
+  $$('#timeline .stop-acts button').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    feedback(b.dataset.cid, b.dataset.act === 'like' ? 'like' : 'skip');
+  });
   const bk = $('#backup .backup');
   if (bk) bk.onclick = () => selectCid(bk.dataset.cid);
 }
@@ -314,6 +392,7 @@ function renderCandidates() {
                         : (c.distance_m / 1000).toFixed(1) + 'km'}</span>
         <span>${c.environment === 'indoor' ? '실내'
               : c.environment === 'outdoor' ? '실외' : '실내외 불명'}</span>
+        ${c.popularity > 0.4 ? '<span class="pop-tag">인기</span>' : ''}
       </div>
     </li>`).join('');
   $$('#cand-list li').forEach(li => li.onclick = () => selectCid(li.dataset.cid));
@@ -512,11 +591,13 @@ async function send(text) {
     const r = await fetch('/api/chat', {
       method:'POST', headers:{ 'Content-Type':'application/json' },
       body:JSON.stringify({ messages:S.history, lat:S.lat, lon:S.lon,
-                            at:S.at, intent:S.intent }),
+                            at:S.at, intent:S.intent, taste:S.taste,
+                            lang:S.lang }),
     });
     const data = await r.json();
     typing.remove();
     S.intent = data.intent;
+    if (data.taste) { S.taste = data.taste; saveTaste(); renderTaste(); }
     if (data.course) {
       S.course = data.course;
       if (data.course.weather) renderWeather(data.course.weather);
@@ -602,6 +683,27 @@ function bindUI() {
     $$('#mode-seg button').forEach(x => x.classList.toggle('on', x === b));
     S.mode = b.dataset.mode; refresh();
   });
+  $$('#interests button').forEach(b => b.onclick = () => {
+    const v = b.dataset.i;
+    const on = b.classList.toggle('on');
+    S.interests = on ? [...new Set([...S.interests, v])]
+                     : S.interests.filter(x => x !== v);
+    refresh();
+  });
+  $('#taste-reset').onclick = () => {
+    S.taste = null; S.interests = [];
+    $$('#interests button').forEach(b => b.classList.remove('on'));
+    saveTaste(); refresh();
+  };
+
+  $$('#lang-seg button').forEach(b => b.onclick = () => {
+    if (b.disabled) return;
+    $$('#lang-seg button').forEach(x => x.classList.toggle('on', x === b));
+    S.lang = b.dataset.lang;
+    try { localStorage.setItem(LS_LANG, S.lang); } catch (e) { /* 무시 */ }
+    refresh();
+  });
+
   $$('#tabs button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 
   $('#chat-form').onsubmit = e => { e.preventDefault(); send(); };
@@ -635,8 +737,35 @@ function bindUI() {
   });
 }
 
+async function syncLanguages() {
+  // 아직 수집하지 않은 어권은 눌러도 한국어가 나온다. 미리 잠가 둔다.
+  try {
+    const h = await getJSON('/api/health');
+    S.langsReady = h.languages || ['ko'];
+  } catch (e) { S.langsReady = ['ko']; }
+  $$('#lang-seg button').forEach(b => {
+    const ok = S.langsReady.includes(b.dataset.lang);
+    b.disabled = !ok;
+    b.title = ok ? '' : '이 언어는 아직 수집되지 않았습니다';
+  });
+  if (!S.langsReady.includes(S.lang)) {
+    S.lang = 'ko';
+    $$('#lang-seg button').forEach(x => x.classList.toggle('on', x.dataset.lang === 'ko'));
+  }
+}
+
 function init() {
+  loadTaste();
+  try {
+    const saved = localStorage.getItem(LS_LANG);
+    if (saved) {
+      S.lang = saved;
+      $$('#lang-seg button').forEach(b =>
+        b.classList.toggle('on', b.dataset.lang === saved));
+    }
+  } catch (e) { /* 무시 */ }
   bindUI();
+  syncLanguages();
   // 지난번 위치를 기억해 두면 재방문이 매끄럽다
   try {
     const saved = JSON.parse(localStorage.getItem(LS_KEY) || 'null');

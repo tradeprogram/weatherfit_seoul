@@ -24,9 +24,13 @@ RAW = ROOT / "data" / "raw"
 OUT = ROOT / "data" / "report.md"
 
 
-def load() -> list[Content]:
+def load(lang: str = "ko") -> list[Content]:
+    """어권별 수집 파일을 읽는다. 한국어는 {분류}.jsonl, 나머지는 {분류}.{lang}.jsonl"""
+    pattern = "*.jsonl" if lang == "ko" else f"*.{lang}.jsonl"
     items: list[Content] = []
-    for path in sorted(RAW.glob("*.jsonl")):
+    for path in sorted(RAW.glob(pattern)):
+        if lang == "ko" and path.name.count(".") > 1:
+            continue                      # 다른 어권 파일은 건너뛴다
         with path.open(encoding="utf-8") as f:
             for line in f:
                 line = line.strip()

@@ -39,7 +39,9 @@ def collect(category: str, source_name: str = "catalog", lang: str = "ko",
             limit: int | None = None) -> int:
     src = get_source(source_name)
     DATA.mkdir(parents=True, exist_ok=True)
-    out = DATA / f"{category}.jsonl"
+    # 어권별로 파일을 나눈다. 한 파일에 섞이면 언어 전환이 불가능해진다.
+    out = DATA / (f"{category}.jsonl" if lang == "ko"
+                  else f"{category}.{lang}.jsonl")
 
     done = _load_done(out)
     ids = src.list_ids(category, lang=lang)

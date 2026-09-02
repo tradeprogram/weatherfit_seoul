@@ -30,9 +30,36 @@ class Place:
     lat: float | None = None
     lon: float | None = None
 
+    # 어권별 번역 텍스트. 좌표·운영시간·기간은 언어와 무관하므로 한국어 것을 쓴다.
+    i18n: dict = field(default_factory=dict)
+
     def __post_init__(self):
         self.lat = self.content.lat
         self.lon = self.content.lon
+
+    def text(self, lang: str = "ko") -> dict:
+        """요청 언어의 텍스트. 없으면 한국어로 떨어진다."""
+        c = self.content
+        base = {
+            "title": c.title, "summary": c.summary, "description": c.description,
+            "tags": c.tags, "address": c.address, "subway": c.subway_raw,
+            "use_time": c.use_time_raw, "closed_days": c.closed_days_raw,
+            "category_path": c.category_path, "homepage": c.homepage,
+            "lang": "ko",
+        }
+        if lang == "ko":
+            return base
+        got = self.i18n.get(lang)
+        if not got:
+            return base                    # 번역이 없으면 원문을 준다
+        merged = dict(base)
+        merged.update({k: v for k, v in got.items() if v})
+        merged["lang"] = lang
+        return merged
+
+    @property
+    def languages(self) -> list[str]:
+        return ["ko"] + sorted(self.i18n)
 
     @property
     def cid(self) -> str:
@@ -51,13 +78,19 @@ class Index:
     build_ms: int = 0
     located: int = 0                 # 좌표가 있는 건수
     dong_matched: int = 0
+    translated: dict = field(default_factory=dict)   # 어권 → 매칭 건수
 
     def __len__(self) -> int:
         return len(self.places)
 
 
-def build_index(items: list[Content], dong_gdf=None) -> Index:
-    """콘텐츠 목록 → 판정 준비가 끝난 인덱스."""
+def build_index(items: list[Content], dong_gdf=None,
+                translations: dict[str, list[Content]] | None = None) -> Index:
+    """콘텐츠 목록 → 판정 준비가 끝난 인덱스.
+
+    translations: {"en": [Content, ...]} 형태. cid 접두어 뒤 suffix가 어권 간
+    같으므로 그것으로 짝을 맞춘다.
+    """
     t0 = time.time()
     places = [
         Place(
@@ -77,11 +110,35 @@ def build_index(items: list[Content], dong_gdf=None) -> Index:
         located=sum(1 for p in places if p.lat and p.lon),
     )
 
+    if translations:
+        _attach_translations(idx, translations)
     if dong_gdf is not None:
         _attach_dong(idx, dong_gdf)
 
     idx.build_ms = int((time.time() - t0) * 1000)
     return idx
+
+
+TEXT_FIELDS = ("title", "summary", "description", "tags", "address",
+               "category_path", "homepage")
+
+
+def _attach_translations(idx: Index, translations: dict[str, list[Content]]) -> None:
+    by_suffix = {p.cid[2:]: p for p in idx.places if len(p.cid) > 2}
+    for lang, items in translations.items():
+        matched = 0
+        for c in items:
+            p = by_suffix.get(c.cid[2:])
+            if p is None:
+                continue
+            p.i18n[lang] = {
+                "title": c.title, "summary": c.summary,
+                "description": c.description, "tags": c.tags,
+                "address": c.address, "subway": c.subway_raw,
+                "category_path": c.category_path, "homepage": c.homepage,
+            }
+            matched += 1
+        idx.translated[lang] = matched
 
 
 def _attach_dong(idx: Index, dong_gdf) -> None:

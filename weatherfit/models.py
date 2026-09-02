@@ -18,6 +18,19 @@ CATEGORIES = {
 
 LANGS = ["ko", "en", "ja", "zh-CN", "zh-TW", "ru", "ms"]
 
+# 콘텐츠 id의 앞 두 글자가 어권을 나타내고, 뒤 suffix는 어권 간 동일하다.
+#   KOPptkfz1 · ENPptkfz1 · JPPptkfz1 → 같은 장소
+# 덕분에 별도 매핑 테이블 없이 cid[2:]로 번역을 연결할 수 있다.
+CID_PREFIX = {
+    "ko": "KO", "en": "EN", "ja": "JP",
+    "zh-CN": "CN", "zh-TW": "TC", "ru": "RU", "ms": "ML",
+}
+
+LANG_LABEL = {
+    "ko": "한국어", "en": "English", "ja": "日本語",
+    "zh-CN": "简体中文", "zh-TW": "繁體中文", "ru": "Русский", "ms": "Bahasa",
+}
+
 
 @dataclass
 class Content:

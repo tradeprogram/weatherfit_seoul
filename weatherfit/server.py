@@ -23,9 +23,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .chat import LANDMARKS, Intent, compose_reply, parse_intent
+from .popularity import scores as popularity_scores
+from .taste import Taste, mood_interests
 from .course import build_course
 from .index import Index, build_index
 from .llm import LLM
+from .models import LANG_LABEL, LANGS
 from .report import load as load_items
 from .routing import haversine_m, router
 from .validate import Weather, check_period, evaluate_place
@@ -57,7 +60,16 @@ def dong_gdf():
 
 def index() -> Index:
     if STATE["index"] is None:
-        STATE["index"] = build_index(load_items(), dong_gdf())
+        # 한국어를 기준으로 두고 다른 어권은 텍스트만 덮어씌운다.
+        # 좌표·운영시간·기간은 언어와 무관하므로 한 번만 정규화하면 된다.
+        translations = {}
+        for lang in LANGS:
+            if lang == "ko":
+                continue
+            rows = load_items(lang)
+            if rows:
+                translations[lang] = rows
+        STATE["index"] = build_index(load_items(), dong_gdf(), translations)
     return STATE["index"]
 
 
@@ -105,6 +117,8 @@ def health():
         "dong_matched": idx.dong_matched,
         "built_at": idx.built_at,
         "build_ms": idx.build_ms,
+        "languages": ["ko"] + sorted(idx.translated),
+        "translated": idx.translated,
         "keys": {
             "visitseoul_api": bool(os.environ.get("VISITSEOUL_API_KEY")),
             "kma": bool(os.environ.get("KMA_API_KEY")),
@@ -162,22 +176,25 @@ def where(lat: float, lon: float):
 
 # ----------------------------------------------------------------- 후보
 
-def _row(p, verdict, detail, lat, lon) -> dict:
+def _row(p, verdict, detail, lat, lon, lang: str = "ko") -> dict:
     c = p.content
+    t = p.text(lang)
     d = haversine_m(lat, lon, p.lat, p.lon)
     return {
-        "cid": c.cid, "title": c.title, "category": c.category,
-        "category_path": c.category_path, "summary": c.summary[:120],
-        "lat": p.lat, "lon": p.lon, "address": c.address,
+        "cid": c.cid, "title": t["title"], "category": c.category,
+        "category_path": t["category_path"], "summary": (t["summary"] or "")[:120],
+        "lat": p.lat, "lon": p.lon, "address": t["address"],
         "gu": p.gu, "dong": p.dong,
-        "tags": c.tags[:4], "subway": c.subway_raw,
-        "use_time": c.use_time_raw, "closed_days": c.closed_days_raw,
+        "tags": (t["tags"] or [])[:4], "subway": t["subway"],
+        "use_time": t["use_time"], "closed_days": t["closed_days"],
+        "text_lang": t["lang"],
         "schedule_start": c.schedule_start, "schedule_end": c.schedule_end,
         "accessibility": c.accessibility, "homepage": c.homepage,
         "phone": c.phone,
         "verdict": verdict.label, "stage": verdict.stage, "reason": verdict.reason,
         "environment": detail["environment"],
         "hours_confidence": detail["hours_confidence"],
+        "popularity": round(popularity_scores().get(c.cid, 0.0), 3),
         "distance_m": round(d), "walk_min": max(1, round(d * 1.3 / 67)),
     }
 
@@ -187,7 +204,7 @@ def candidates(lat: float = SEOUL_CITY_HALL[0], lon: float = SEOUL_CITY_HALL[1],
                mode: str = "auto", at: str | None = None,
                limit: int = Query(200, le=1000),
                radius_m: int = Query(0, ge=0, le=20000),
-               category: str = ""):
+               category: str = "", lang: str = "ko"):
     when = parse_when(at)
     w = resolve_weather(mode, lat, lon, when)
 
@@ -202,7 +219,7 @@ def candidates(lat: float = SEOUL_CITY_HALL[0], lon: float = SEOUL_CITY_HALL[1],
         v, detail = evaluate_place(p, when, w)
         if v.ok is not True:
             continue
-        rows.append(_row(p, v, detail, lat, lon))
+        rows.append(_row(p, v, detail, lat, lon, lang))
 
     rows.sort(key=lambda r: r["distance_m"])
     return {"weather": weather_now(lat, lon, mode, at),
@@ -226,7 +243,8 @@ def weather_now(lat: float = SEOUL_CITY_HALL[0], lon: float = SEOUL_CITY_HALL[1]
 def make_course(lat: float, lon: float, mode: str = "auto",
                 at: str | None = None, hours: float = 4.0,
                 radius_m: int = 4000, interests: str = "",
-                explain: bool = False) -> dict:
+                explain: bool = False, taste: Taste | None = None,
+                lang: str = "ko") -> dict:
     """코스 생성 본체.
 
     엔드포인트를 파이썬 함수로 직접 부르면 FastAPI의 Query 기본값이
@@ -240,9 +258,13 @@ def make_course(lat: float, lon: float, mode: str = "auto",
         budget_min=int(hours * 60),
         area_radius_m=float(radius_m) if radius_m != 4000 else radius_for(hours),
         interests=[x for x in interests.split(",") if x],
+        taste=taste,
     )
-    out = c.to_dict()
+    out = c.to_dict(lang)
     out["engine"] = "rules"
+    out["lang"] = lang
+    if taste is not None and not taste.is_empty:
+        out["taste"] = taste.describe()
 
     if explain and c.steps:
         llm = LLM()
@@ -260,8 +282,37 @@ def course(lat: float = SEOUL_CITY_HALL[0], lon: float = SEOUL_CITY_HALL[1],
            mode: str = "auto", at: str | None = None,
            hours: float = Query(4.0, ge=0.5, le=12),
            radius_m: int = Query(4000, ge=500, le=20000),
-           interests: str = "", explain: bool = False):
-    return make_course(lat, lon, mode, at, hours, radius_m, interests, explain)
+           interests: str = "", explain: bool = False, lang: str = "ko"):
+    return make_course(lat, lon, mode, at, hours, radius_m, interests, explain,
+                       lang=lang)
+
+
+class PlanIn(BaseModel):
+    lat: float = SEOUL_CITY_HALL[0]
+    lon: float = SEOUL_CITY_HALL[1]
+    mode: str = "auto"
+    at: str | None = None
+    hours: float = 4.0
+    interests: list[str] = []
+    taste: dict | None = None          # 화면이 들고 다니는 취향 프로필
+    lang: str = "ko"
+
+
+@app.post("/api/plan")
+def plan(body: PlanIn):
+    """취향을 반영한 일정.
+
+    프로필은 서버에 저장하지 않는다. 화면이 들고 있다가 매 요청에 실어 보내고
+    서버는 그 요청에만 쓴다. 개인화를 하면서 아무것도 쌓아 두지 않는 방법이다.
+    """
+    taste = Taste.from_dict(body.taste)
+    if body.interests:
+        taste.declare(body.interests, weight=1.5)
+    out = make_course(body.lat, body.lon, body.mode, body.at, body.hours,
+                      radius_m=4000, interests=",".join(body.interests),
+                      taste=taste, lang=body.lang)
+    out["taste_applied"] = not taste.is_empty
+    return out
 
 
 @app.get("/api/routing")
@@ -325,6 +376,8 @@ class ChatIn(BaseModel):
     lon: float | None = None
     at: str | None = None
     intent: dict | None = None
+    taste: dict | None = None
+    lang: str = "ko"
 
 
 @app.post("/api/chat")
@@ -355,13 +408,22 @@ def chat(body: ChatIn):
         if (center := _gu_center(intent.area.replace("구", ""))):
             intent.lat, intent.lon = center
 
+    taste = Taste.from_dict(body.taste)
+    if intent.interests:
+        taste.declare(intent.interests, weight=1.5)
+    for tag in mood_interests(message):          # "조용한 데", "이색적인 곳"
+        taste.tags[tag] = taste.tags.get(tag, 0.0) + 0.8
+
     result = make_course(lat=intent.lat, lon=intent.lon, mode=intent.weather_mode,
                          at=body.at, hours=float(intent.hours or 4.0),
-                         interests=",".join(intent.interests))
+                         interests=",".join(intent.interests), taste=taste,
+                         lang=intent.language if intent.language in ("ko", "en",
+                              "ja", "zh-CN", "zh-TW", "ru", "ms") else body.lang)
 
     reply, engine = compose_reply(message, intent, result, llm)
     result["engine"] = engine
     return {"reply": reply, "course": result, "intent": intent.to_dict(),
+            "taste": taste.to_dict(), "taste_summary": taste.describe(),
             "engine": engine, "llm_available": llm.available}
 
 

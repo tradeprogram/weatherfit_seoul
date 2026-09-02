@@ -19,7 +19,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from .index import Place
-from .quality import (Diversity, is_touristic, radius_for, rank)
+from .quality import Diversity, is_touristic, radius_for, rank
+from .taste import Taste
 from .routing import haversine_m, router
 from .validate import Weather, check_hours, evaluate_place, parse_ymd
 
@@ -59,16 +60,18 @@ class Step:
     ends_today: bool = False
     hours_assumed: bool = False     # 운영정보가 없어 일반 시간대로 가정했는가
 
-    def to_dict(self) -> dict:
+    def to_dict(self, lang: str = "ko") -> dict:
         i = self.place.content
+        t = self.place.text(lang)
         return {
-            "cid": i.cid, "title": i.title, "category": i.category,
-            "category_path": i.category_path, "summary": i.summary,
-            "address": i.address, "lat": i.lat, "lon": i.lon,
-            "subway": i.subway_raw, "use_time": i.use_time_raw,
-            "closed_days": i.closed_days_raw, "tags": i.tags,
+            "cid": i.cid, "title": t["title"], "category": i.category,
+            "category_path": t["category_path"], "summary": t["summary"],
+            "address": t["address"], "lat": i.lat, "lon": i.lon,
+            "subway": t["subway"], "use_time": t["use_time"],
+            "closed_days": t["closed_days"], "tags": t["tags"],
+            "text_lang": t["lang"],
             "schedule_start": i.schedule_start, "schedule_end": i.schedule_end,
-            "accessibility": i.accessibility, "homepage": i.homepage,
+            "accessibility": i.accessibility, "homepage": t["homepage"],
             "phone": i.phone,
             "gu": self.place.gu, "dong": self.place.dong,
             "role": self.role, "environment": self.place.environment,
@@ -97,12 +100,12 @@ class Course:
     def end(self) -> datetime | None:
         return self.steps[-1].depart if self.steps else self.start
 
-    def to_dict(self) -> dict:
+    def to_dict(self, lang: str = "ko") -> dict:
         travel = sum(_leg_minutes(s) for s in self.steps)
         dwell = sum(s.dwell_min for s in self.steps)
         return {
-            "steps": [s.to_dict() for s in self.steps],
-            "backup": self.backup.to_dict() if self.backup else None,
+            "steps": [s.to_dict(lang) for s in self.steps],
+            "backup": self.backup.to_dict(lang) if self.backup else None,
             "start": self.start.strftime("%H:%M") if self.start else "",
             "end": self.end.strftime("%H:%M") if self.end else "",
             "total_min": travel + dwell,
@@ -165,14 +168,16 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                  origin: tuple[float, float] | None = None,
                  budget_min: int = 240, area_radius_m: float = 4000.0,
                  interests: list[str] | None = None,
-                 max_stops: int = 5) -> Course:
+                 max_stops: int = 5,
+                 taste: Taste | None = None) -> Course:
     """출발 시각과 남은 시간으로 실제 일정을 짠다."""
     course = Course(weather=weather, start=when, budget_min=budget_min)
     today = when.date()
     rt = router()
 
+    disliked = set(taste.disliked) if taste else set()
     pool = [(p, r) for p, r in passing(places, when, weather)
-            if p.lat and p.lon and is_touristic(p)]
+            if p.lat and p.lon and is_touristic(p) and p.cid not in disliked]
     if not pool:
         course.notes.append("지금 조건에 맞는 장소를 찾지 못했습니다.")
         return course
@@ -195,11 +200,11 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     near_events = near(events)
     if near_events:
         # 끝나는 날이 임박한 것 우선, 같으면 품질 순
-        near_events = rank(near_events, origin)
+        near_events = rank(near_events, origin, taste)
         near_events.sort(key=lambda t: _days_left(t[0], today) or 999)
         anchor_pick = near_events[0]
     else:
-        near_any = _prefer(rank(near(pool), origin), interests)
+        near_any = _prefer(rank(near(pool), origin, taste), interests)
         if near_any:
             anchor_pick = near_any[0]
             course.notes.append(
@@ -272,7 +277,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                    if p.cid not in used
                    and haversine_m(*base, p.lat, p.lon) <= radius
                    and diversity.allows(p)]
-        return rank(near_by, base)
+        return rank(near_by, base, taste)
 
     # 식사 시간대면 음식을 먼저, 아니면 관심사를 먼저 붙인다
     want_food = _is_meal_time(cursor) or (interests and "음식" in interests)

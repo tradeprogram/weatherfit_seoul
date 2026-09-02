@@ -487,3 +487,44 @@ input:focus,select:focus{background:#fff}
 }
 .warn-tag{display:inline-block;font-size:9.5px;padding:1px 6px;border-radius:5px;
   background:rgba(240,138,52,.16);color:#b56a1e;margin-left:4px;font-weight:600}
+
+/* ═════════ 관심사 · 취향 ═════════ */
+.ctl-top{align-items:flex-start}
+.interests{display:flex;flex-wrap:wrap;gap:4px;flex:1}
+.interests button{
+  padding:5px 9px;font-size:11.5px;border-radius:999px;color:var(--ink-2);
+  background:rgba(255,255,255,.72);border:1px solid var(--glass-edge);
+  transition:background .14s,color .14s,border-color .14s;
+}
+.interests button:hover{background:#fff;border-color:var(--primary)}
+.interests button.on{background:var(--primary);border-color:var(--primary);
+  color:#fff;font-weight:600}
+
+.taste-bar{display:flex;align-items:center;gap:8px;flex:0 0 auto;
+  padding:8px 12px;margin-bottom:11px;border-radius:11px;
+  background:rgba(124,98,216,.09);border:1px solid rgba(124,98,216,.22)}
+.taste-bar[hidden]{display:none}
+.taste-txt{flex:1;font-size:11.5px;color:#5340a8;line-height:1.45;
+  overflow:hidden;text-overflow:ellipsis}
+.taste-bar button{font-size:11px;color:var(--ink-3);padding:3px 8px;
+  border-radius:7px;background:rgba(255,255,255,.7)}
+.taste-bar button:hover{background:#fff;color:var(--ink)}
+
+.stop-acts{display:flex;gap:5px;margin-top:7px}
+.stop-acts button{font-size:10.5px;padding:3px 9px;border-radius:999px;
+  color:var(--ink-3);background:rgba(255,255,255,.85);
+  border:1px solid var(--glass-edge)}
+.stop-acts button:hover{background:#fff;color:var(--primary);
+  border-color:var(--primary)}
+.stop-acts button.no:hover{color:var(--warn);border-color:var(--warn)}
+.pop-tag{display:inline-block;font-size:9.5px;padding:1px 6px;border-radius:5px;
+  background:rgba(31,122,196,.12);color:#155d97;margin-left:4px;font-weight:600}
+
+/* ═════════ 언어 전환 ═════════ */
+.lang-seg{display:flex;gap:2px;padding:3px;border-radius:10px;flex:0 0 auto;
+  background:rgba(255,255,255,.55);border:1px solid var(--glass-edge)}
+.lang-seg button{padding:4px 8px;border-radius:7px;font-size:11px;color:var(--ink-2)}
+.lang-seg button:hover{background:rgba(255,255,255,.85)}
+.lang-seg button.on{background:var(--primary);color:#fff;font-weight:600}
+.lang-seg button:disabled{opacity:.35;cursor:not-allowed}
+.lang-note{font-size:10.5px;color:var(--ink-3);margin-top:3px}

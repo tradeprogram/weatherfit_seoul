@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=31">
+<link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
 
@@ -42,6 +42,12 @@
   </div>
 
   <div class="topstats" id="head-stats"></div>
+  <div class="lang-seg" id="lang-seg" role="group" aria-label="언어">
+    <button data-lang="ko" class="on">한국어</button>
+    <button data-lang="en">EN</button>
+    <button data-lang="ja">日本</button>
+    <button data-lang="zh-CN">中文</button>
+  </div>
   <button class="icon-btn" id="help-btn" title="이용 안내" aria-label="이용 안내">?</button>
 </header>
 
@@ -78,6 +84,22 @@
           <button data-mode="heat">폭염</button>
         </div>
       </div>
+      <div class="ctl ctl-top">
+        <span class="lbl">관심사</span>
+        <div class="interests" id="interests">
+          <button data-i="음식">🍚 음식</button>
+          <button data-i="문화관광">🎨 문화</button>
+          <button data-i="역사관광">🏯 역사</button>
+          <button data-i="자연관광">🌳 자연</button>
+          <button data-i="쇼핑">🛍 쇼핑</button>
+          <button data-i="체험관광">✋ 체험</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="taste-bar" id="taste-bar" hidden>
+      <span class="taste-txt" id="taste-txt"></span>
+      <button id="taste-reset">초기화</button>
     </div>
 
     <div class="plan-head" id="plan-head"></div>
@@ -194,6 +216,6 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=32"></script>
+<script src="app.js?v=41"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@ import time
 import requests
 from bs4 import BeautifulSoup
 
-from ..models import CATEGORIES, Content
+from ..models import CATEGORIES, CID_PREFIX, Content
 
 BASE = "https://api.visitseoul.net"
 LIST_URL = BASE + "/contents/standard/list"
@@ -34,9 +34,10 @@ _FIELD_MAP = {
 }
 
 _DATE = re.compile(r"(\d{4})\.(\d{2})\.(\d{2})")
-_LON = re.compile(r"경도[:\s]*([-\d.]+)")
-_LAT = re.compile(r"위도[:\s]*([-\d.]+)")
-_CID_IN_LIST = re.compile(r"goViewPage\('(KO[^']+)'\);\" class=\"board-link\"")
+# 어권에 따라 라벨이 한국어/영어로 나온다 (경도 · longitude)
+_LON = re.compile(r"(?:경도|longitude)\s*[:：]?\s*([-\d.]+)", re.I)
+_LAT = re.compile(r"(?:위도|latitude)\s*[:：]?\s*([-\d.]+)", re.I)
+_CID_IN_LIST = r"goViewPage\('({prefix}[^']+)'\);\" class=\"board-link\""
 
 
 class CatalogSource:
@@ -89,7 +90,8 @@ class CatalogSource:
         for page in range(1, pages + 1):
             html = self._get(LIST_URL, lang="ko", lang_code=lang,
                              com_ctgry=code, pageNo=page)
-            found = _CID_IN_LIST.findall(html)
+            found = re.findall(
+                _CID_IN_LIST.format(prefix=CID_PREFIX.get(lang, "KO")), html)
             if not found:                                # 빈 페이지면 조기 종료
                 break
             for cid in found:

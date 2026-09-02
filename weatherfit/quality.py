@@ -20,7 +20,9 @@ from .index import Place
 
 # 관광 일정에 넣지 않는다. 주변 목록에는 그대로 남는다 — 약국이 필요한 순간도 있다.
 EXCLUDE_TITLE = re.compile(
-    r"약국|편의점|세탁|관광안내소|포토부스|다이소|무인|코인빨래|"
+    r"약국|편의점|세탁|포토부스|다이소|무인|코인빨래|"
+    r"관광안내|관광정보|안내센터|정보센터|안내소|"
+    r"주차장|화장실|충전소|대여소|자전거\s?대여|물품보관|"
     r"CU |GS25|세븐일레븐|이마트24|이마트\s|롯데마트|홈플러스"
 )
 EXCLUDE_PATH = ("쇼핑 > 편의점", "쇼핑 > 대형마트")
@@ -111,23 +113,48 @@ class Diversity:
         self.subcategories[sub] = self.subcategories.get(sub, 0) + 1
 
 
-def rank(cands, origin, quality_weight: float = 0.55):
-    """(거리 가까움 × 품질)으로 정렬한다.
+# 점수 배분. 합이 1이 되게 유지한다.
+W_NEAR = 0.30      # 가까운가
+W_QUALITY = 0.25   # 콘텐츠가 충실한가
+W_POPULAR = 0.25   # 실제로 알려진 곳인가 (위키 조회수 등)
+W_TASTE = 0.20     # 이 사용자의 취향인가
 
-    거리만 보면 약국이, 품질만 보면 반대편 동네 명소가 온다. 둘을 섞는다.
+
+def rank(cands, origin, taste=None, pop: dict | None = None):
+    """거리 · 품질 · 인기 · 취향을 합쳐 정렬한다.
+
+    거리만 보면 약국이 오고, 품질만 보면 반대편 동네 명소가 온다.
+    인기만 보면 유명한 곳만 돌게 되고, 취향만 보면 늘 같은 것만 본다.
+    네 가지를 섞되 어느 하나가 전부를 결정하지 않게 한다.
+
     2km를 거리 점수 0점의 기준으로 삼는다 — 도보와 짧은 대중교통의 범위다.
     """
     from .routing import haversine_m
+
+    if pop is None:
+        from .popularity import scores as _pop
+        pop = _pop()
 
     scored = []
     for item in cands:
         p = item[0]
         d = haversine_m(*origin, p.lat, p.lon) if origin else 0.0
         near = max(0.0, 1.0 - d / 2000.0)
-        score = near * (1 - quality_weight) + quality(p) * quality_weight
-        scored.append((score, d, item))
+        q = quality(p)
+        popular = pop.get(p.cid, 0.0)
+        # 인기 데이터가 없는 곳(위키 문서가 없는 대부분)은 품질로 대신한다.
+        # 0으로 두면 유명하지 않다는 뜻이 아니라 모른다는 뜻이기 때문이다.
+        if popular == 0.0:
+            popular = q * 0.6
+
+        aff = taste.affinity(p) if taste is not None else 0.0
+        score = (near * W_NEAR + q * W_QUALITY
+                 + popular * W_POPULAR + max(0.0, aff) * W_TASTE)
+        if aff < 0:
+            score += aff * W_TASTE        # 싫어하는 쪽은 감점
+        scored.append((score, item))
     scored.sort(key=lambda t: -t[0])
-    return [t[2] for t in scored]
+    return [t[1] for t in scored]
 
 
 def radius_for(hours: float) -> float:
