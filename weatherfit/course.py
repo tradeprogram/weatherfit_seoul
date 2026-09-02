@@ -167,6 +167,10 @@ ASSUMED_OPEN = (10, 20)
 
 MIN_USEFUL_DWELL = 20          # 이보다 짧게 머물 바엔 다른 곳을 간다
 
+# 이 안쪽으로 끝나는 행사만 '지금 아니면 놓친다'로 본다.
+# 축제·행사의 99.2%가 이미 끝난 데이터라, 살아 있는 행사는 그 자체로 귀하다.
+URGENT_DAYS = 7
+
 
 def _closing_at(place: Place, when: datetime) -> datetime | None:
     """그날 문 닫는 시각. 여러 구간이면 도착 이후 가장 가까운 마감."""
@@ -251,26 +255,34 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     indoors = [t for t in pool if t[0].environment == "indoor"]
 
     # ---------- 앵커 ----------
-    # "홍대에서 3시간"인데 반경 밖 행사를 앵커로 잡으면 이동에만 40분을 쓴다.
-    # 근처 행사 → 근처 관심사 → 근처 아무거나 → 전역 행사 순.
+    # 첫 장소가 나머지 일정의 위치를 결정한다. 그래서 여기만은 순위를
+    # 제대로 세운다. "홍대에서 3시간"인데 반경 밖을 앵커로 잡으면
+    # 이동에만 40분을 쓰므로, 근처를 먼저 보고 없을 때만 서울 전역으로 넓힌다.
     anchor_pick = None
+    near_pool = near(pool)
     near_events = near(events)
-    if near_events:
-        # 끝나는 날이 임박한 것 우선, 같으면 품질 순
-        near_events = rank(near_events, origin, taste)
-        near_events.sort(key=lambda t: _days_left(t[0], today) or 999)
-        anchor_pick = near_events[0]
-    else:
-        near_any = _prefer(rank(near(pool), origin, taste), interests)
-        if near_any:
-            anchor_pick = near_any[0]
+    if near_pool:
+        # 순위(거리·품질·인기·취향)를 먼저 세우고, 곧 끝나는 행사만 앞으로 당긴다.
+        # 행사를 무조건 앵커로 두면 두 달 남은 전시가 '역사관광을 보고 싶다'는
+        # 사람의 덕수궁을 밀어낸다. '지금 아니면 놓친다'가 사실일 때만 앞선다.
+        ordered = _urgent_first(
+            _prefer(rank(near_pool, origin, taste), interests), today)
+        anchor_pick = ordered[0]
+        personalized = bool(interests) or (taste is not None and not taste.is_empty)
+        if not anchor_pick[0].content.is_short_event:
             course.notes.append(
+                "관심사에 맞는 곳을 근처 행사보다 먼저 넣었습니다."
+                if near_events and personalized else
+                "근처 행사보다 점수가 높은 곳으로 시작합니다."
+                if near_events else
                 "근처에 지금 열린 행사가 없어 상시 콘텐츠로 시작합니다."
                 if weather.outdoor_ok else
                 f"{weather.describe()}로 야외 행사가 빠져, 근처 실내 콘텐츠로 시작합니다.")
-        elif events:
-            events.sort(key=lambda t: _days_left(t[0], today) or 999)
-            anchor_pick = events[0]
+    else:
+        pick_all = _urgent_first(
+            _prefer(rank(pool, origin, taste), interests), today)
+        if pick_all:
+            anchor_pick = pick_all[0]
             course.notes.append(
                 f"근처 {int(area_radius_m / 1000)}km 안에 조건에 맞는 곳이 없어 "
                 "서울 전역에서 찾았습니다. 이동 시간을 확인해 주세요.")
@@ -428,6 +440,24 @@ def _diagnose(when: datetime, budget_min: int, weather: Weather,
 
 def _is_meal_time(t: datetime) -> bool:
     return 11 <= t.hour < 14 or 17 <= t.hour < 21
+
+
+def _urgent_first(cands, today: date):
+    """곧 끝나는 행사만 순위를 뛰어넘어 앞으로 온다.
+
+    끝이 임박했다는 것은 취향보다 우선하는 정보다 — 취향에 덜 맞아도
+    다시 올 기회가 없기 때문이다. 다만 그 특권은 URGENT_DAYS 안쪽에만 준다.
+    """
+    def urgency(t):
+        if not t[0].content.is_short_event:
+            return 0
+        left = _days_left(t[0], today)
+        if left is None or left < 0 or left > URGENT_DAYS:
+            return 0
+        return URGENT_DAYS - left + 1
+
+    return [t for _, t in sorted(enumerate(cands),
+                                 key=lambda it: (-urgency(it[1]), it[0]))]
 
 
 def _prefer(cands, interests: list[str] | None):
