@@ -357,16 +357,36 @@ input:focus,select:focus{background:#fff}
   :root{--left-w:320px;--right-w:312px}
 }
 @media (max-width:980px){
-  body{overflow:auto}
-  .topbar{position:sticky;height:auto;flex-wrap:wrap;gap:12px;padding:12px 14px}
-  .topstats{margin-left:0}
-  .panel{position:relative;inset:auto;width:auto;margin:12px var(--pad);
-    height:auto;max-height:none}
-  .panel-left{height:64vh}
-  #map{position:relative;height:52vh;inset:auto;margin:0 var(--pad);
-    border-radius:16px;overflow:hidden}
-  .map-ctl,.legend{position:static;margin:0 var(--pad) 12px;max-width:none}
+  /* 세로로 쌓되 순서를 정한다. DOM에서는 지도가 먼저라 그냥 두면 위로 온다. */
+  body{overflow:auto;display:flex;flex-direction:column;height:auto;min-height:100%}
+  .sky{display:none}
+  .topbar{order:1;position:sticky;top:0;height:auto;flex-wrap:wrap;
+    gap:10px 12px;padding:10px 12px;margin:8px var(--pad) 0;border-radius:14px}
+  .brand{flex:1 1 auto;min-width:0}
+  .brand h1{font-size:16px}
+  .brand p{display:none}
+  .mark{width:30px;height:30px;font-size:16px;border-radius:9px}
+  .where{flex:1 1 auto;min-width:0}
+  .where-body small{max-width:none}
+  .wx{padding-left:12px}
+  .wx-body small{display:none}
+  .topstats{margin-left:0;gap:14px;flex:1 1 auto}
+  .stat{text-align:left}
+  .stat .v{font-size:16px}
+  .lang-seg{flex:0 0 auto;margin-left:auto}
+  .icon-btn{order:-1;margin-left:auto}
+
+  #map{order:2;position:relative;height:44vh;min-height:280px;inset:auto;
+    margin:10px var(--pad) 0;border-radius:16px;overflow:hidden}
+  .map-ctl{order:3;position:static;margin:10px var(--pad) 0;flex-wrap:wrap}
+  .legend{order:4;position:static;margin:10px var(--pad) 0;max-width:none}
+  .panel{order:5;position:relative;inset:auto;width:auto;
+    margin:10px var(--pad);height:auto;max-height:none}
+  .panel-left{min-height:60vh}
+  .panel-right{order:6;width:auto;max-height:none}
+  #pane-chat{min-height:52vh}
   .leaflet-top.leaflet-right{top:0;right:0}
+  .toast{bottom:20px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
@@ -538,3 +558,14 @@ input:focus,select:focus{background:#fff}
   z-index:60;padding:11px 20px;border-radius:999px;font-size:13px;font-weight:500;
   opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ═════════ 접근성 ═════════ */
+.skip{position:absolute;left:-9999px;top:0;z-index:100;padding:10px 16px;
+  border-radius:0 0 10px 0;background:var(--primary);color:#fff;font-size:13px}
+.skip:focus{left:0}
+.timeline .stop:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+@media (prefers-contrast:more){
+  :root{--glass:rgba(255,255,255,.94);--glass-strong:#fff;
+        --ink-2:#2c3f52;--ink-3:#4a6076;--glass-edge:rgba(22,40,58,.45)}
+  .glass{backdrop-filter:none;-webkit-backdrop-filter:none}
+}

@@ -331,7 +331,9 @@ function renderPlan() {
   tl.innerHTML = c.steps.map((s, i) => `
     ${travelRow(s)}
     <li class="stop${S.selected === s.cid ? ' sel' : ''}"
-        data-role="${s.role}" data-cid="${esc(s.cid)}">
+        data-role="${s.role}" data-cid="${esc(s.cid)}"
+        tabindex="0" role="button"
+        aria-label="${i + 1}번째 일정, ${esc(s.title)}, ${s.arrive} 도착, ${s.dwell_min}분 머묾">
       <span class="tick">${i + 1}</span>
       <div class="when">${s.arrive}<small>${s.depart}</small></div>
       <div class="body">
@@ -360,9 +362,17 @@ function renderPlan() {
 
   notes.innerHTML = (c.notes || []).map(n => `<div>${esc(n)}</div>`).join('');
 
-  $$('#timeline .stop').forEach(li => li.onclick = e => {
-    if (e.target.closest('.stop-acts')) return;
-    selectCid(li.dataset.cid);
+  $$('#timeline .stop').forEach(li => {
+    li.onclick = e => {
+      if (e.target.closest('.stop-acts')) return;
+      selectCid(li.dataset.cid);
+    };
+    li.onkeydown = e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (e.target.closest('.stop-acts')) return;
+      e.preventDefault();
+      selectCid(li.dataset.cid);
+    };
   });
   $$('#timeline .stop-acts button').forEach(b => b.onclick = e => {
     e.stopPropagation();
@@ -564,6 +574,7 @@ function selectCid(cid) {
               || (S.course?.backup?.cid === cid ? S.course.backup : null);
   const inList = S.candidates.find(c => c.cid === cid);
   renderDetail({ ...(inList || {}), ...(inPlan || {}) });
+  $('#detail-close').focus();
   $$('#timeline .stop, #cand-list li').forEach(li =>
     li.classList.toggle('sel', li.dataset.cid === cid));
   const p = inPlan || inList;
@@ -711,7 +722,11 @@ function toast(msg) {
 }
 
 function switchTab(name) {
-  $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  $$('#tabs button').forEach(b => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
   ['plan','chat','list','evidence'].forEach(t => $('#pane-' + t).hidden = t !== name);
 }
 
@@ -801,12 +816,14 @@ function bindUI() {
 
   $('#btn-dong').onclick = e => {
     const on = e.currentTarget.classList.toggle('on');
+    e.currentTarget.setAttribute('aria-pressed', on ? 'true' : 'false');
     if (!mapReady || !layers.dong) return;
     if (on) { layers.dong.addTo(map); layers.dong.bringToBack(); }
     else map.removeLayer(layers.dong);
   };
   $('#btn-all').onclick = e => {
     S.showAll = e.currentTarget.classList.toggle('on');
+    e.currentTarget.setAttribute('aria-pressed', S.showAll ? 'true' : 'false');
     if (mapReady) S.showAll ? layers.cands.addTo(map) : map.removeLayer(layers.cands);
     drawMap();
   };
@@ -814,7 +831,13 @@ function bindUI() {
     if (mapReady) map.setView([S.lat, S.lon], 15, { animate:false });
   };
 
-  $('#detail-close').onclick = () => { $('#detail-panel').hidden = true; };
+  $('#detail-close').onclick = () => {
+    $('#detail-panel').hidden = true;
+    // 목록에서 열었으면 목록으로 초점을 돌려준다
+    const back = $(`#timeline .stop[data-cid="${S.selected}"]`)
+              || $(`#cand-list li[data-cid="${S.selected}"]`);
+    if (back) back.focus();
+  };
   $('#help-btn').onclick = () => { $('#help-overlay').hidden = false; };
   $('#help-close').onclick = () => { $('#help-overlay').hidden = true; };
   $('#help-overlay').onclick = e => {

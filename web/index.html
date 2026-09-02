@@ -9,11 +9,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=42">
+<link rel="stylesheet" href="style.css?v=45">
 </head>
 <body>
 
-<div id="map"></div>
+<a class="skip" href="#pane-plan">본문으로 건너뛰기</a>
+<div id="map" role="application" aria-label="서울 지도. 일정과 주변 장소가 표시됩니다"></div>
 <div class="sky" aria-hidden="true"></div>
 
 <header class="topbar glass">
@@ -52,15 +53,19 @@
 </header>
 
 <aside class="panel panel-left glass">
-  <nav class="tabs" id="tabs">
-    <button data-tab="plan" class="on">일정</button>
-    <button data-tab="chat">대화</button>
-    <button data-tab="list">주변</button>
-    <button data-tab="evidence">근거</button>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="화면 전환">
+    <button data-tab="plan" class="on" role="tab" aria-selected="true"
+            aria-controls="pane-plan" id="tab-plan">일정</button>
+    <button data-tab="chat" role="tab" aria-selected="false"
+            aria-controls="pane-chat" id="tab-chat">대화</button>
+    <button data-tab="list" role="tab" aria-selected="false"
+            aria-controls="pane-list" id="tab-list">주변</button>
+    <button data-tab="evidence" role="tab" aria-selected="false"
+            aria-controls="pane-evidence" id="tab-evidence">근거</button>
   </nav>
 
   <!-- 일정 -->
-  <section class="pane" id="pane-plan">
+  <section class="pane" id="pane-plan" role="tabpanel" aria-labelledby="tab-plan">
     <div class="controls">
       <div class="ctl">
         <span class="lbl">언제부터</span>
@@ -102,16 +107,16 @@
       <button id="taste-reset">초기화</button>
     </div>
 
-    <div class="plan-head" id="plan-head"></div>
+    <div class="plan-head" id="plan-head" aria-live="polite"></div>
     <button class="share-btn" id="share-btn">🔗 이 일정 공유하기</button>
-    <ol class="timeline" id="timeline"></ol>
+    <ol class="timeline" id="timeline" aria-label="일정 순서"></ol>
     <div id="backup"></div>
-    <div class="notes" id="plan-notes"></div>
+    <div class="notes" id="plan-notes" role="status"></div>
   </section>
 
   <!-- 대화 -->
-  <section class="pane" id="pane-chat" hidden>
-    <div class="chat-log" id="chat-log"></div>
+  <section class="pane" id="pane-chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
+    <div class="chat-log" id="chat-log" role="log" aria-live="polite" aria-label="대화 내용"></div>
     <div class="chips" id="chips">
       <button>지금 여기서 3시간</button>
       <button>비 오는데 실내로</button>
@@ -126,28 +131,29 @@
   </section>
 
   <!-- 주변 -->
-  <section class="pane" id="pane-list" hidden>
+  <section class="pane" id="pane-list" role="tabpanel" aria-labelledby="tab-list" hidden>
     <p class="hint" id="list-summary"></p>
     <div class="filters" id="cat-filters"></div>
     <ul class="cand" id="cand-list"></ul>
   </section>
 
   <!-- 근거 -->
-  <section class="pane" id="pane-evidence" hidden>
+  <section class="pane" id="pane-evidence" role="tabpanel" aria-labelledby="tab-evidence" hidden>
     <p class="hint">비짓서울 API 3,788건을 전수 수집해 측정한 값입니다.</p>
     <div id="evidence"></div>
   </section>
 </aside>
 
-<aside class="panel panel-right glass" id="detail-panel" hidden>
+<aside class="panel panel-right glass" id="detail-panel" hidden
+       role="dialog" aria-modal="false" aria-labelledby="detail-title">
   <button class="close-btn" id="detail-close" aria-label="닫기">×</button>
   <h2 id="detail-title"></h2>
   <div id="detail"></div>
 </aside>
 
 <div class="map-ctl">
-  <button class="glass on" id="btn-dong">행정동</button>
-  <button class="glass" id="btn-all">주변 전체</button>
+  <button class="glass on" id="btn-dong" aria-pressed="true">행정동</button>
+  <button class="glass" id="btn-all" aria-pressed="false">주변 전체</button>
   <button class="glass" id="btn-me" title="내 위치로">내 위치</button>
 </div>
 
@@ -217,6 +223,6 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=42"></script>
+<script src="app.js?v=44"></script>
 </body>
 </html>
