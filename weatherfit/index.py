@@ -97,8 +97,8 @@ def build_index(items: list[Content], dong_gdf=None,
             content=it,
             hours=parse_hours(it.use_time_raw, it.closed_days_raw),
             **dict(zip(("environment", "env_reason"),
-                       tag_environment(it.category, it.title,
-                                       it.description, it.tags))),
+                       tag_environment(it.category, it.title, it.description,
+                                       it.tags, it.category_path))),
         )
         for it in items
     ]

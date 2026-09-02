@@ -111,6 +111,31 @@ class TestEnvironment:
         label, _ = tag_environment("문화관광", "경복궁 수문장 교대의식", "", [])
         assert label == "outdoor"
 
+    def test_한_글자_키워드는_엉뚱한_단어에_걸리지_않는다(self):
+        """'궁'을 그냥 두면 '가능'·'기능' 안에서 걸린다."""
+        label, _ = tag_environment(
+            "문화관광", "조수미 40주년 콘서트", "관람 가능한 공연입니다", [])
+        assert label != "outdoor"
+
+    def test_소분류가_키워드보다_먼저다(self):
+        """제목에는 전시 '제목'이 들어가 도움이 안 되는 경우가 많다."""
+        label, why = tag_environment(
+            "문화관광", "《안식의 결 Texture of Rest》", "", [],
+            category_path="문화관광 > 전시시설")
+        assert label == "indoor"
+        assert "전시시설" in why
+
+    def test_도시공원은_실외(self):
+        label, _ = tag_environment("문화관광", "아무개 공원", "", [],
+                                   category_path="문화관광 > 도시공원")
+        assert label == "outdoor"
+
+    def test_축제는_실외_전시회는_실내(self):
+        assert tag_environment("축제/공연/행사", "아무개 축제", "", [],
+                               category_path="축제/공연/행사 > 축제")[0] == "outdoor"
+        assert tag_environment("축제/공연/행사", "아무개 전시회", "", [],
+                               category_path="축제/공연/행사 > 행사 > 전시회")[0] == "indoor"
+
     def test_박물관은_실내(self):
         label, _ = tag_environment("문화관광", "서울역사박물관 기획전", "", [])
         assert label == "indoor"
