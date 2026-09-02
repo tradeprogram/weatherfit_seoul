@@ -121,16 +121,21 @@ class TestPlan:
         말하지 않아도 덕수궁·명동성당이 1위라, 통과해도 반영된 건지
         원래 그런 건지 구분이 안 된다.
         """
-        def count(interests):
+        def rank_of(interests):
+            """그 분류가 일정에서 몇 번째로 나오나. 없으면 99."""
             d = client.post("/api/plan",
                             json={**SEOUL, "hours": 4, "at": AT, "mode": "clear",
                                   "interests": interests}).json()
-            return sum(1 for s in d["steps"] if s["category"] == cat), d
+            for i, s in enumerate(d["steps"]):
+                if s["category"] == cat:
+                    return i, d
+            return 99, d
 
-        before, _ = count([])
-        after, d = count([cat])
+        before, _ = rank_of([])
+        after, d = rank_of([cat])
         assert d["taste_applied"] is True
-        assert after >= 1 and after > before
+        assert after < 99                    # 말한 분류가 일정에 들어와야 하고
+        assert after <= before               # 말하기 전보다 앞으로 와야 한다
 
     def test_관심사가_첫_장소를_바꾼다(self, client):
         """첫 장소가 나머지 일정의 위치를 정한다. 여기가 안 바뀌면

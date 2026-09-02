@@ -304,7 +304,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         nonlocal cursor, here
         place, reason = pick
         dest = (place.lat, place.lon)
-        travel = rt.best(here, dest) if here else None
+        travel = rt.best(here, dest, measure=False) if here else None
         move = 0
         if travel:
             rec = travel["recommended"]
@@ -348,8 +348,13 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                    and diversity.allows(p)]
         return rank(near_by, base, taste)
 
-    # 식사 시간대면 음식을 먼저, 아니면 관심사를 먼저 붙인다
-    want_food = _is_meal_time(cursor) or (interests and "음식" in interests)
+    # 식사 시간대면 음식을 먼저, 아니면 관심사를 먼저 붙인다.
+    # 다만 앵커가 이미 식당이면 밥 먹고 나와 또 밥집으로 가게 된다.
+    # 강남처럼 식당이 압도적으로 많은 동네에서 실제로 그렇게 나왔다.
+    anchor_is_food = "음식" in (anchor_pick[0].content.category_path
+                                or anchor_pick[0].content.category)
+    want_food = (not anchor_is_food
+                 and (_is_meal_time(cursor) or (interests and "음식" in interests)))
     order = ["food", "spot"] if want_food else ["spot", "food"]
 
     while len(course.steps) < max_stops and cursor < deadline:
@@ -376,12 +381,14 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         [t for t in indoors if t[0].cid not in used], 1600.0)
     if shelter:
         p, r = shelter[0]
-        travel = rt.best(here, (p.lat, p.lon)) if here else None
+        travel = rt.best(here, (p.lat, p.lon), measure=False) if here else None
         course.backup = Step(place=p, role="shelter", reason=r, travel=travel,
                              dwell_min=dwell_minutes(p),
                              line="날씨가 바뀌면 여기로 피할 수 있습니다.")
     elif not weather.outdoor_ok:
         course.notes.append("도보권에 실내 대안을 찾지 못했습니다.")
+
+    _measure_legs(course, rt, origin, deadline)
 
     if not weather.outdoor_ok:
         course.notes.append(f"{weather.describe()} — 실외 장소를 후보에서 제외했습니다.")
@@ -436,6 +443,48 @@ def _diagnose(when: datetime, budget_min: int, weather: Weather,
         notes.append("근처에서 일정을 만들지 못했습니다. "
                      "시간을 늘리거나 위치를 옮겨 보세요.")
     return notes
+
+
+def _measure_legs(course: Course, rt, origin, deadline: datetime) -> None:
+    """확정된 구간만 실제 경로로 다시 재고, 바뀐 시각으로 일정을 다시 맞춘다.
+
+    후보를 고르는 동안에는 직선 추정을 쓴다 — 한 자리에 여덟 곳을 시도하므로
+    시도마다 경로 API를 부르면 일정 하나에 수십 번을 묻게 된다. 대신 다 정해진
+    뒤에 실제로 쓰는 서넛만 동시에 물어 실측으로 바꾼다.
+
+    실측이 추정보다 길게 나오면 뒤 일정이 밀린다. 밀린 시각으로 운영시간을
+    다시 보고, 더 이상 들어가지 않는 뒤쪽은 잘라 낸다. 재지 않고 두면
+    '도착 시각에 열려 있는가'라는 이 앱의 전제가 그 순간 거짓이 된다.
+    """
+    if not course.steps or origin is None:
+        return
+
+    pairs, here = [], origin
+    for st in course.steps:
+        pairs.append((here, (st.place.lat, st.place.lon)))
+        here = (st.place.lat, st.place.lon)
+    measured = rt.measure_many(pairs)
+
+    kept: list[Step] = []
+    cursor = course.start
+    for st, travel in zip(course.steps, measured):
+        rec = travel["recommended"]
+        move = (travel[rec] or {}).get("minutes", 0)
+        arrive = cursor + timedelta(minutes=move)
+        ok, dwell, assumed = _fit_visit(st.place, arrive, dwell_minutes(st.place))
+        if not ok or arrive + timedelta(minutes=dwell) > deadline:
+            break                      # 여기부터는 실제 이동시간으로는 못 간다
+        st.travel = travel
+        st.arrive, st.depart = arrive, arrive + timedelta(minutes=dwell)
+        st.dwell_min, st.hours_assumed = dwell, assumed
+        cursor = st.depart
+        kept.append(st)
+
+    if len(kept) < len(course.steps):
+        course.notes.append(
+            f"실제 이동시간으로 다시 계산해 뒤쪽 {len(course.steps) - len(kept)}곳을 "
+            "뺐습니다. 추정보다 오래 걸리는 구간이 있습니다.")
+    course.steps = kept
 
 
 def _is_meal_time(t: datetime) -> bool:

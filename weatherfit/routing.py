@@ -10,15 +10,22 @@
     walk      TMAP 보행자 경로      TMAP_APP_KEY
     transit   ODsay 대중교통        ODSAY_API_KEY
     drive     네이버 Directions 5   NAVER_CLIENT_ID / NAVER_CLIENT_SECRET
-    (없으면)  직선거리 추정         키 불필요
+    walk      OSRM 보행 프로파일    키 불필요 (TMAP이 없을 때)
+    (그래도 안 되면) 직선거리 추정   키 불필요
 
 네이버 지도 API에는 보행자·대중교통 경로가 공개돼 있지 않아 자동차만 맡는다.
 도보는 TMAP, 대중교통은 ODsay가 국내에서 가장 널리 쓰이는 조합이다.
+
+키가 없는 사람에게도 도보만은 실측을 준다. OSM 도로망 위에서 도는 공개
+OSRM 보행 프로파일이 있어서다. 덕수궁→명동성당을 직선 추정은 1,430m/21분,
+OSRM은 1,443m/19분으로 답한다. 값은 비슷해도 하나는 잰 값이고 하나는
+가정한 값이다 — 그 차이를 화면에 그대로 적는다.
 """
 from __future__ import annotations
 
 import math
 import os
+import time
 from dataclasses import asdict, dataclass, field
 
 import requests
@@ -26,6 +33,14 @@ import requests
 WALK_M_PER_MIN = 67.0            # 도보 4km/h
 DETOUR = 1.30                    # 직선 대비 실제 보행 경로가 길어지는 비율
 WALKABLE_M = 900                 # 이보다 가까우면 대중교통이 오히려 손해다
+
+# 공개 OSRM 보행 프로파일. 예의상 UA를 밝히고, 캐시로 호출을 줄인다.
+OSRM_FOOT = ("https://routing.openstreetmap.de/routed-foot"
+             "/route/v1/foot/{lon1},{lat1};{lon2},{lat2}")
+OSRM_UA = {"User-Agent": "weatherfit-seoul/1.0 (tourism course planner; "
+                         "https://github.com/tradeprogram/weatherfit_seoul)"}
+OSRM_TIMEOUT = 4                 # 느리면 추정으로 넘어간다. 화면을 붙잡지 않는다
+OSRM_COOLDOWN = 300              # 막힌 뒤 다시 시도하기까지
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -84,18 +99,23 @@ def estimate_transit(o: tuple[float, float], d: tuple[float, float]) -> Leg:
 class Routing:
     """키가 있으면 실제 경로 API를, 없으면 추정을 쓴다."""
 
-    def __init__(self, timeout: int = 8):
+    def __init__(self, timeout: int = 8, offline: bool = False):
         self.timeout = timeout
+        # offline이면 어떤 경로 API도 부르지 않고 추정만 낸다.
+        # 테스트가 공개 서버에 매달리면 느려지고, 서버가 흔들리면 빨개진다.
+        self.offline = offline
         self.tmap = os.environ.get("TMAP_APP_KEY", "")
         self.odsay = os.environ.get("ODSAY_API_KEY", "")
         self.naver_id = os.environ.get("NAVER_CLIENT_ID", "")
         self.naver_secret = os.environ.get("NAVER_CLIENT_SECRET", "")
         self._cache: dict[tuple, Leg] = {}
+        self._osrm_down = 0.0         # 공개 서버가 막히면 이 시각까지 묻지 않는다
 
     @property
     def providers(self) -> dict[str, str]:
         return {
-            "walk": "tmap" if self.tmap else "estimate",
+            "walk": ("estimate" if self.offline
+                     else "tmap" if self.tmap else "osrm"),
             "transit": "odsay" if self.odsay else "estimate",
             "drive": "naver" if (self.naver_id and self.naver_secret) else "estimate",
         }
@@ -106,12 +126,17 @@ class Routing:
 
     # ---------- 도보: TMAP 보행자 경로 ----------
 
-    def walk(self, o: tuple[float, float], d: tuple[float, float]) -> Leg:
+    def walk(self, o: tuple[float, float], d: tuple[float, float],
+             measure: bool = True) -> Leg:
         key = self._key("walk", o, d)
         if key in self._cache:
             return self._cache[key]
 
         leg = estimate_walk(o, d)
+        if not measure or self.offline:
+            return leg                    # 캐시에 넣지 않는다 — 추정은 임시값이다
+        if not self.tmap:
+            leg = self._osrm_walk(o, d) or leg
         if self.tmap:
             try:
                 r = requests.post(
@@ -146,14 +171,55 @@ class Routing:
         self._cache[key] = leg
         return leg
 
+    def measure_many(self, pairs: list[tuple]) -> list[dict]:
+        """여러 구간을 동시에 실측한다. 순서는 그대로 돌려준다.
+
+        일정 한 개의 구간은 서넛뿐이라 한 번의 왕복으로 끝난다.
+        하나씩 물으면 구간마다 0.7초씩 쌓여 화면이 눈에 띄게 느려진다.
+        """
+        if not pairs:
+            return []
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(6, len(pairs))) as ex:
+            return list(ex.map(lambda p: self.best(p[0], p[1]), pairs))
+
+    def _osrm_walk(self, o, d) -> "Leg | None":
+        """키 없이 쓰는 실측 도보. 실패하면 None — 호출한 쪽이 추정을 쓴다."""
+        if self._osrm_down and time.time() < self._osrm_down:
+            return None
+        try:
+            r = requests.get(
+                OSRM_FOOT.format(lat1=o[0], lon1=o[1], lat2=d[0], lon2=d[1]),
+                params={"overview": "false"}, headers=OSRM_UA,
+                timeout=OSRM_TIMEOUT,
+            )
+            r.raise_for_status()
+            rt = r.json()["routes"][0]
+        except Exception:
+            # 한 번 막히면 대개 그 뒤로도 막힌다. 요청마다 4초씩 기다릴 이유가
+            # 없다. 다만 일시적인 장애일 수도 있으니 5분 뒤에 다시 시도한다.
+            self._osrm_down = time.time() + OSRM_COOLDOWN
+            return None
+        return Leg(
+            mode="walk",
+            minutes=max(1, round(rt["duration"] / 60)),
+            distance_m=round(rt["distance"]),
+            provider="osrm",
+            summary="OSM 도로망 보행 경로",
+            exact=True,
+        )
+
     # ---------- 대중교통: ODsay ----------
 
-    def transit(self, o: tuple[float, float], d: tuple[float, float]) -> Leg:
+    def transit(self, o: tuple[float, float], d: tuple[float, float],
+                measure: bool = True) -> Leg:
         key = self._key("transit", o, d)
         if key in self._cache:
             return self._cache[key]
 
         leg = estimate_transit(o, d)
+        if not measure or self.offline:
+            return leg
         if self.odsay:
             try:
                 r = requests.get(
@@ -202,6 +268,8 @@ class Routing:
         leg = Leg(mode="drive", minutes=max(3, round(straight / 400)),
                   distance_m=round(straight * 1.4), provider="estimate",
                   summary="직선거리 기반 추정", exact=False)
+        if self.offline:
+            return leg
         if self.naver_id and self.naver_secret:
             try:
                 r = requests.get(
@@ -227,16 +295,21 @@ class Routing:
 
     # ---------- 구간에 맞는 수단 고르기 ----------
 
-    def best(self, o: tuple[float, float], d: tuple[float, float]) -> dict:
+    def best(self, o: tuple[float, float], d: tuple[float, float],
+             measure: bool = True) -> dict:
         """도보와 대중교통을 함께 재고 권장 수단을 정한다.
 
         가까우면 걷는 편이 빠르다. 대중교통은 대기와 환승 때문에 짧은
         거리에서 오히려 손해라, 도보권이면 아예 묻지 않는다.
+
+        measure=False면 네트워크를 타지 않고 추정만 낸다. 후보를 고르는
+        동안에는 한 자리에 여덟 곳을 시도하므로, 시도마다 경로 API를
+        부르면 일정 하나에 수십 번을 묻게 된다. 확정된 구간만 실측한다.
         """
-        walk = self.walk(o, d)
+        walk = self.walk(o, d, measure)
         if walk.distance_m <= WALKABLE_M:
             return {"recommended": "walk", "walk": walk.to_dict(), "transit": None}
-        transit = self.transit(o, d)
+        transit = self.transit(o, d, measure)
         rec = "walk" if walk.minutes <= transit.minutes else "transit"
         return {"recommended": rec,
                 "walk": walk.to_dict(), "transit": transit.to_dict()}

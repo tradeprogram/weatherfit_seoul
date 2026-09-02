@@ -97,7 +97,7 @@ python -m weatherfit.server                   # http://127.0.0.1:8020
 |---|---|
 | `VISITSEOUL_API_KEY` | 공개 카탈로그를 소스로 수집 |
 | `KMA_API_KEY` | 맑음 21°C 기본값으로 판정 |
-| `TMAP_APP_KEY` | 도보 시간을 직선거리 × 1.3으로 추정 |
+| `TMAP_APP_KEY` | **공개 OSRM 보행 프로파일로 실측** (그것도 막히면 직선 × 1.3) |
 | `ODSAY_API_KEY` | 대중교통 시간을 평균속도로 추정 |
 | `NAVER_CLIENT_ID`/`SECRET` | 자동차 시간을 직선거리로 추정 |
 | `KAKAO_REST_KEY` | 카카오 등재 확인을 건너뜀 |
@@ -105,6 +105,15 @@ python -m weatherfit.server                   # http://127.0.0.1:8020
 | `ANTHROPIC_API_KEY` | 규칙 기반 의도 파악·템플릿 답변 |
 
 각 구간의 소요시간에는 **실측인지 추정인지**가 함께 표시된다.
+
+도보만은 키가 없어도 실측을 준다. OSM 도로망 위에서 도는 공개 OSRM 보행
+프로파일이 있어서다. 덕수궁→명동성당을 직선 추정은 1,430m/21분, OSRM은
+1,443m/19분으로 답한다. 값은 비슷해도 하나는 잰 값이고 하나는 가정한 값이다.
+
+후보를 고르는 동안에는 추정만 쓴다. 한 자리에 여덟 곳을 시도하므로 시도마다
+API를 부르면 일정 하나에 수십 번을 묻게 된다. 다 정해진 뒤 실제로 쓰는
+서넛만 **동시에** 물어 실측으로 바꾸고, 밀린 시각으로 운영시간을 다시 본다.
+실측이 추정보다 오래 걸려 뒤 일정이 안 들어가면 잘라 내고 그 사실을 적는다.
 
 ## 성능
 
@@ -117,6 +126,7 @@ python -m weatherfit.server                   # http://127.0.0.1:8020
 | `GET /api/where` | 5.1ms | — |
 | `GET /api/candidates` | 29.8ms | 179KB |
 | `POST /api/plan` | 73.6ms | 6.6KB |
+| `POST /api/plan` (구간 실측 포함, 첫 조회) | 0.9s | 6.6KB |
 | `GET /api/stats` | 1.3ms | 캐시 |
 | `POST /api/chat` | 66.9ms | 5.9KB |
 
@@ -160,7 +170,7 @@ weatherfit/
   quality.py     관광지 품질·다양성 상한·랭킹
   popularity.py  위키/카카오/구글/네이버 인기 지표 (배치 캐시)
   taste.py       관심사 학습. 태그 벡터와 친화도
-  routing.py     TMAP 보행 · ODsay 대중교통 · 네이버 자동차
+  routing.py     TMAP/OSRM 보행 · ODsay 대중교통 · 네이버 자동차
   course.py      시간표가 있는 일정 구성
   chat.py        대화형 의도 추출과 답변 생성
   weather.py     기상청 초단기실황 (격자 변환 포함)
@@ -173,7 +183,7 @@ web/
   app.js         Leaflet, 위치·일정·대화·주변·근거
   style.css      밝은 낮의 서울 — 글라스모피즘
   vendor/        Leaflet (CDN 의존을 없애기 위해 동봉)
-tests/           153개. 실제로 났던 회귀를 그대로 박아 둔다
+tests/           169개. 실제로 났던 회귀를 그대로 박아 둔다
 ```
 
 자세한 설계 판단은 [ARCHITECTURE.md](ARCHITECTURE.md).
