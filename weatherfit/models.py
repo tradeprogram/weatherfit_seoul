@@ -60,7 +60,13 @@ class Content:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Content":
         known = {f for f in cls.__dataclass_fields__}
-        return cls(**{k: v for k, v in d.items() if k in known})
+        item = cls(**{k: v for k, v in d.items() if k in known})
+        # 예전에 수집한 파일에는 구분자가 겹친 경로가 들어 있다
+        # ("문화관광 > > > 전시시설"). 읽을 때 정리한다.
+        if ">" in item.category_path:
+            parts = [p.strip() for p in item.category_path.split(">") if p.strip()]
+            item.category_path = " > ".join(parts)
+        return item
 
     @property
     def is_dated_event(self) -> bool:

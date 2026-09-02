@@ -163,7 +163,10 @@ class CatalogSource:
 
         crumb = main.select_one(".path, .cate")
         if crumb:
-            item.category_path = crumb.get_text(" > ", strip=True)
-            item.category = item.category_path.split(">")[0].strip()
+            # 중첩 태그 때문에 구분자가 겹쳐 나온다: "문화관광 > > > 전시시설"
+            parts = [p.strip() for p in crumb.get_text(">", strip=True).split(">")]
+            parts = [p for p in parts if p]
+            item.category_path = " > ".join(parts)
+            item.category = parts[0] if parts else ""
 
         return item

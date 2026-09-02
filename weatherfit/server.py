@@ -93,6 +93,13 @@ def health():
     }
 
 
+@app.post("/api/reload")
+def reload_data():
+    """수집을 더 돌린 뒤 서버를 재시작하지 않고 다시 읽는다."""
+    STATE["items"] = []
+    return {"ok": True, "items": len(items()), "loaded_at": STATE["loaded_at"]}
+
+
 @app.get("/api/weather")
 def weather_now(lat: float = SEOUL_CITY_HALL[0], lon: float = SEOUL_CITY_HALL[1],
                 mode: str = "auto", at: str | None = None):
