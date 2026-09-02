@@ -378,14 +378,20 @@ input:focus,select:focus{background:#fff}
   .lang-seg{flex:0 0 auto;margin-left:auto}
   .icon-btn{order:-1;margin-left:auto}
 
-  #map{order:2;position:relative;height:44vh;min-height:280px;inset:auto;
+  /* 휴대폰에서는 일정이 제품의 본체다. 지도·조작·범례를 다 지나야 일정이
+     나오면 스크롤을 900px 내려야 한다. 일정을 지도 바로 밑에 올리고,
+     범례는 한 줄로 눕혀 맨 아래로 보낸다. */
+  #map{order:2;position:relative;height:38vh;min-height:240px;inset:auto;
     margin:10px var(--pad) 0;border-radius:16px;overflow:hidden}
   .map-ctl{order:3;position:static;margin:10px var(--pad) 0;flex-wrap:wrap}
-  .legend{order:4;position:static;margin:10px var(--pad) 0;max-width:none}
-  .panel{order:5;position:relative;inset:auto;width:auto;
+  .panel{order:4;position:relative;inset:auto;width:auto;
     margin:10px var(--pad);height:auto;max-height:none}
   .panel-left{min-height:60vh}
-  .panel-right{order:6;width:auto;max-height:none}
+  .panel-right{order:5;width:auto;max-height:none}
+  .legend{order:6;position:static;margin:0 var(--pad) 10px;max-width:none;
+    display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:9px 13px}
+  .legend-head{margin-bottom:0}
+  .legend-row{margin-bottom:0}
   #pane-chat{min-height:52vh}
   .leaflet-top.leaflet-right{top:0;right:0}
   .toast{bottom:20px}
