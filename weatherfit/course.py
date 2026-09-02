@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from .index import Place
+from .quality import (Diversity, is_touristic, radius_for, rank)
 from .routing import haversine_m, router
 from .validate import Weather, check_hours, evaluate_place, parse_ymd
 
@@ -170,7 +171,8 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     today = when.date()
     rt = router()
 
-    pool = [(p, r) for p, r in passing(places, when, weather) if p.lat and p.lon]
+    pool = [(p, r) for p, r in passing(places, when, weather)
+            if p.lat and p.lon and is_touristic(p)]
     if not pool:
         course.notes.append("지금 조건에 맞는 장소를 찾지 못했습니다.")
         return course
@@ -192,13 +194,13 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     anchor_pick = None
     near_events = near(events)
     if near_events:
+        # 끝나는 날이 임박한 것 우선, 같으면 품질 순
+        near_events = rank(near_events, origin)
         near_events.sort(key=lambda t: _days_left(t[0], today) or 999)
         anchor_pick = near_events[0]
     else:
-        near_any = _prefer(near(pool), interests)
+        near_any = _prefer(rank(near(pool), origin), interests)
         if near_any:
-            if origin:
-                near_any.sort(key=lambda t: haversine_m(*origin, t[0].lat, t[0].lon))
             anchor_pick = near_any[0]
             course.notes.append(
                 "근처에 지금 열린 행사가 없어 상시 콘텐츠로 시작합니다."
@@ -218,6 +220,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     # ---------- 일정 쌓기 ----------
     deadline = when + timedelta(minutes=budget_min)
     assumed_count = [0]
+    diversity = Diversity()
     used: set[str] = set()
     cursor = when
     here = origin
@@ -252,6 +255,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         )
         course.steps.append(step)
         used.add(place.cid)
+        diversity.add(place)
         cursor = step.depart
         here = dest
         return True
@@ -261,17 +265,14 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
             "남은 시간이 짧아 일정을 만들지 못했습니다. 시간을 늘려 보세요.")
         return course
 
-    def nearest(cands, radius=1200.0):
+    def pick_from(cands, radius=1400.0):
+        """현재 위치 반경 안에서 품질×거리 순. 다양성 상한을 넘는 건 뺀다."""
         base = here
-        out = []
-        for p, r in cands:
-            if p.cid in used:
-                continue
-            d = haversine_m(*base, p.lat, p.lon)
-            if d <= radius:
-                out.append((d, (p, r)))
-        out.sort(key=lambda t: t[0])
-        return [t[1] for t in out]
+        near_by = [(p, r) for p, r in cands
+                   if p.cid not in used
+                   and haversine_m(*base, p.lat, p.lon) <= radius
+                   and diversity.allows(p)]
+        return rank(near_by, base)
 
     # 식사 시간대면 음식을 먼저, 아니면 관심사를 먼저 붙인다
     want_food = _is_meal_time(cursor) or (interests and "음식" in interests)
@@ -280,8 +281,9 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     while len(course.steps) < max_stops and cursor < deadline:
         added = False
         for kind in order:
-            cands = nearest(foods if kind == "food" else _prefer(pool, interests))
-            for pick in cands[:6]:
+            cands = pick_from(foods if kind == "food"
+                              else _prefer(pool, interests))
+            for pick in cands[:8]:
                 if add(pick, kind if kind == "food" else "spot"):
                     added = True
                     break
@@ -296,8 +298,8 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                     if t[0].cid not in used
                     and "음식" not in (t[0].content.category_path
                                       or t[0].content.category)]
-    shelter = nearest(shelter_pool, 1500.0) or nearest(
-        [t for t in indoors if t[0].cid not in used], 1500.0)
+    shelter = pick_from(shelter_pool, 1600.0) or pick_from(
+        [t for t in indoors if t[0].cid not in used], 1600.0)
     if shelter:
         p, r = shelter[0]
         travel = rt.best(here, (p.lat, p.lon)) if here else None

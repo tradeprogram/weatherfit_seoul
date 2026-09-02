@@ -232,11 +232,13 @@ def make_course(lat: float, lon: float, mode: str = "auto",
     엔드포인트를 파이썬 함수로 직접 부르면 FastAPI의 Query 기본값이
     그대로 넘어와 숫자 대신 Query 객체가 들어온다. 그래서 로직을 분리한다.
     """
+    from .quality import radius_for
     when = parse_when(at)
     w = resolve_weather(mode, lat, lon, when)
     c = build_course(
         index().places, when, w, origin=(lat, lon),
-        budget_min=int(hours * 60), area_radius_m=radius_m,
+        budget_min=int(hours * 60),
+        area_radius_m=float(radius_m) if radius_m != 4000 else radius_for(hours),
         interests=[x for x in interests.split(",") if x],
     )
     out = c.to_dict()
