@@ -450,9 +450,7 @@ function bindUI() {
         `이해한 조건 — ${u.area || '현재 위치'} · ` +
         `${{rain:'우천', heat:'폭염', clear:'맑음', auto:'실시간 날씨'}[u.weather_mode] || u.weather_mode}` +
         ` · 도보 ${u.max_walk_min}분 이내`;
-      if (c.weather) renderWeather({ ...c.weather, temp_c:0, pty:'없음', sky:'맑음',
-                                     desc:c.weather.desc, source:c.weather.source,
-                                     note:c.weather.note });
+      if (c.weather) renderWeather(c.weather);
       renderCourse(); drawMap();
     } catch (e) {
       $('#chat-understood').textContent = '요청을 처리하지 못했습니다: ' + e.message;
