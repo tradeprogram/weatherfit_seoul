@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from .models import Content
+from .routing import router
 from .validate import Weather, evaluate
 
 WALK_M_PER_MIN = 67.0          # 도보 4km/h
@@ -42,6 +43,7 @@ class Step:
     distance_m: float | None = None
     walk_min: int | None = None
     ends_today: bool = False
+    travel: dict | None = None      # 앞 장소에서 여기까지: 도보/대중교통
 
     def to_dict(self) -> dict:
         i = self.item
@@ -57,6 +59,7 @@ class Step:
             "verdict_reason": self.reason, "line": self.line,
             "distance_m": round(self.distance_m) if self.distance_m else None,
             "walk_min": self.walk_min, "ends_today": self.ends_today,
+            "travel": self.travel,
         }
 
 
@@ -92,6 +95,17 @@ def _days_left(item: Content, today: date) -> int | None:
     return (end - today).days if end else None
 
 
+def _prefer(cands, interests: list[str] | None):
+    """관심사로 말한 분류를 앞으로 당긴다. 없으면 순서를 건드리지 않는다."""
+    if not interests:
+        return cands
+    want = tuple(interests)
+    hit = [t for t in cands if any(w in (t[0].category_path or t[0].category)
+                                   for w in want)]
+    rest = [t for t in cands if t not in hit]
+    return hit + rest
+
+
 def passing(items: list[Content], when: datetime, weather: Weather):
     """유효성 판정을 통과한 후보만. (Content, environment, reason) 생성기."""
     for it in items:
@@ -103,7 +117,8 @@ def passing(items: list[Content], when: datetime, weather: Weather):
 def build_course(items: list[Content], when: datetime, weather: Weather,
                  origin: tuple[float, float] | None = None,
                  max_walk_min: int = 25, want_food: int = 2,
-                 area_radius_m: float = 4000.0) -> Course:
+                 area_radius_m: float = 4000.0,
+                 interests: list[str] | None = None) -> Course:
     """반나절 코스 하나를 만든다.
 
     `origin`이 주어지면 그 반경(`area_radius_m`) 안에서 앵커를 고른다.
@@ -129,37 +144,41 @@ def build_course(items: list[Content], when: datetime, weather: Weather,
     foods = [(i, e, r) for i, e, r in pool if "음식" in (i.category_path or i.category)]
     indoors = [(i, e, r) for i, e, r in pool if e == "indoor" and i.lat and i.lon]
 
-    events = near_origin(all_events)
-    widened = False
-    if not events and all_events:
-        events, widened = all_events, True
-
-    # ---- 앵커: 종료가 임박한 행사 우선 ----
-    if events:
-        events.sort(key=lambda t: _days_left(t[0], today) or 999)
-        item, env, reason = events[0]
-        if widened:
-            course.notes.append(
-                f"근처 {int(area_radius_m / 1000)}km 안에 지금 열린 행사가 없어 "
-                "서울 전역에서 찾았습니다.")
+    # ---- 앵커 고르기 ----
+    # 순서가 중요하다. "홍대에서 3시간"이라고 했는데 반경 밖 행사를 앵커로 잡으면
+    # 이동에만 40분을 쓴다. 근처 행사 → 근처 상시 콘텐츠 → 그래도 없으면 전역 순.
+    anchor = None
+    near_events = near_origin(all_events)
+    if near_events:
+        near_events.sort(key=lambda t: _days_left(t[0], today) or 999)
+        item, env, reason = near_events[0]
         left = _days_left(item, today)
         anchor = Step(item, "anchor", env, reason, ends_today=(left == 0))
-        course.steps.append(anchor)
     else:
-        # 행사가 없으면 통과한 것 중 출발지에 가장 가까운 항목을 앵커로
-        located = [t for t in pool if t[0].lat and t[0].lon]
-        if not located:
-            course.notes.append("좌표가 있는 후보가 없어 지도에 표시할 수 없습니다.")
-            return course
-        if origin:
-            located.sort(key=lambda t: haversine_m(*origin, t[0].lat, t[0].lon))
-        item, env, reason = located[0]
-        anchor = Step(item, "anchor", env, reason)
-        course.steps.append(anchor)
-        course.notes.append(
-            "지금 조건에 맞는 행사가 없어 상시 콘텐츠를 기준으로 구성했습니다."
-            if weather.outdoor_ok else
-            f"{weather.describe()}로 야외 행사가 모두 빠져, 실내 상시 콘텐츠로 구성했습니다.")
+        near_any = near_origin([t for t in pool if t[0].lat and t[0].lon])
+        near_any = _prefer(near_any, interests)
+        if near_any:
+            if origin:
+                near_any.sort(key=lambda t: haversine_m(*origin, t[0].lat, t[0].lon))
+            item, env, reason = near_any[0]
+            anchor = Step(item, "anchor", env, reason)
+            course.notes.append(
+                "근처에 지금 열린 행사가 없어 상시 콘텐츠로 구성했습니다."
+                if weather.outdoor_ok else
+                f"{weather.describe()}로 야외 행사가 빠져, 근처 실내 콘텐츠로 구성했습니다.")
+        elif all_events:
+            all_events.sort(key=lambda t: _days_left(t[0], today) or 999)
+            item, env, reason = all_events[0]
+            left = _days_left(item, today)
+            anchor = Step(item, "anchor", env, reason, ends_today=(left == 0))
+            course.notes.append(
+                f"근처 {int(area_radius_m / 1000)}km 안에 조건에 맞는 곳이 없어 "
+                "서울 전역에서 찾았습니다. 이동 시간을 확인해 주세요.")
+
+    if anchor is None:
+        course.notes.append("좌표가 있는 후보가 없어 지도에 표시할 수 없습니다.")
+        return course
+    course.steps.append(anchor)
 
     base = (anchor.item.lat, anchor.item.lon)
     if origin:
@@ -184,6 +203,8 @@ def build_course(items: list[Content], when: datetime, weather: Weather,
         return out
 
     # ---- 도보권 음식 ----
+    if interests and "음식" in interests:
+        want_food = max(want_food, 3)        # 먹으러 간다고 했으면 더 붙인다
     for d, it, env, reason in nearby(foods, want_food):
         course.steps.append(Step(it, "food", env, reason,
                                  distance_m=d, walk_min=walk_minutes(d)))
@@ -205,10 +226,33 @@ def build_course(items: list[Content], when: datetime, weather: Weather,
         course.notes.append(
             f"{weather.describe()} — 실외 장소를 후보에서 제외했습니다.")
 
+    _measure_travel(course, origin)
+
     for s in course.steps:
         if not s.line:
             s.line = _default_line(s, weather, today)
     return course
+
+
+def _measure_travel(course: Course, origin: tuple[float, float] | None) -> None:
+    """구간마다 실제 도보·대중교통 소요시간을 채운다.
+
+    앵커는 출발지에서, 나머지는 바로 앞 장소에서 잰다. 경로 API 키가 없으면
+    추정값이 들어가되 provider가 estimate로 표시된다.
+    """
+    rt = router()
+    prev = origin
+    for step in course.steps:
+        if not (step.item.lat and step.item.lon):
+            prev = None
+            continue
+        here = (step.item.lat, step.item.lon)
+        if prev:
+            step.travel = rt.best(prev, here)
+            walk = step.travel["walk"]
+            step.walk_min = walk["minutes"]
+            step.distance_m = walk["distance_m"]
+        prev = here
 
 
 def _default_line(step: Step, weather: Weather, today: date) -> str:
