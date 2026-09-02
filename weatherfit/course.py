@@ -139,10 +139,21 @@ def _days_left(place: Place, today: date) -> int | None:
 
 
 def passing(places: list[Place], when: datetime, weather: Weather):
-    """지금 판정을 통과한 후보. (Place, reason)"""
+    """일정에 올릴 수 있는 후보. (Place, reason)
+
+    '판정 불가'를 일률적으로 버리지 않는다. 어느 단계에서 몰랐는지가 다르다.
+
+      운영 불가  운영시간 정보가 없을 뿐이다. 일반 영업시간대(ASSUMED_OPEN)를
+                 가정하고 넣되 '시간 미상'으로 표시한다. 여기를 버리면
+                 803건(21.2%)이 통째로 사라진다.
+      날씨 불가  실내외를 모르는데 비가 온다. 이건 넣으면 안 된다 —
+                 야외였다면 헛걸음이 되기 때문이다.
+    """
     for p in places:
         v, _ = evaluate_place(p, when, weather)
         if v.ok is True:
+            yield p, v.reason
+        elif v.ok is None and v.stage == "운영":
             yield p, v.reason
 
 
@@ -152,16 +163,57 @@ def passing(places: list[Place], when: datetime, weather: Weather):
 ASSUMED_OPEN = (10, 20)
 
 
-def _open_on_arrival(place: Place, arrive: datetime) -> tuple[bool, bool]:
-    """도착 시각에 열려 있는가. (통과 여부, 가정을 적용했는지)"""
+MIN_USEFUL_DWELL = 20          # 이보다 짧게 머물 바엔 다른 곳을 간다
+
+
+def _closing_at(place: Place, when: datetime) -> datetime | None:
+    """그날 문 닫는 시각. 여러 구간이면 도착 이후 가장 가까운 마감."""
+    wd = when.weekday()
+    best = None
+    for rule in place.hours.rules:
+        if wd not in rule.days:
+            continue
+        for _, end in rule.ranges:
+            try:
+                h, m = map(int, end.split(":"))
+            except ValueError:
+                continue
+            close = when.replace(hour=h % 24, minute=m, second=0, microsecond=0)
+            if h >= 24 or close <= when:
+                continue               # 자정 넘김은 그날 마감으로 보지 않는다
+            if best is None or close < best:
+                best = close
+    return best
+
+
+def _fit_visit(place: Place, arrive: datetime,
+               dwell: int) -> tuple[bool, int, bool]:
+    """도착해서 실제로 머물 수 있는가.
+
+    도착 시각만 보면 12:20에 문을 연 곳이 12:30에 닫아도 통과한다.
+    머무는 동안 닫히면 체류를 줄이고, 그래도 너무 짧으면 넣지 않는다.
+
+    반환: (넣을까, 조정된 체류시간, 가정을 적용했는지)
+    """
     state = check_hours(place.hours, arrive).ok
-    if state is True:
-        return True, False
     if state is False:
-        return False, False
-    # 판정 불가 — 일반적인 영업시간대로 가정한다
-    lo, hi = ASSUMED_OPEN
-    return lo <= arrive.hour < hi, True
+        return False, dwell, False
+
+    assumed = False
+    if state is None:                  # 운영 정보가 없다 — 일반 시간대로 가정
+        lo, hi = ASSUMED_OPEN
+        if not (lo <= arrive.hour < hi):
+            return False, dwell, True
+        assumed = True
+        return True, dwell, assumed
+
+    close = _closing_at(place, arrive)
+    if close is not None:
+        left = int((close - arrive).total_seconds() // 60)
+        if left < MIN_USEFUL_DWELL:
+            return False, dwell, assumed
+        dwell = min(dwell, left)
+    return True, dwell, assumed
 
 
 def build_course(places: list[Place], when: datetime, weather: Weather,
@@ -248,8 +300,8 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         dwell = dwell_minutes(place)
         if arrive + timedelta(minutes=dwell) > deadline:
             return False
-        ok, assumed = _open_on_arrival(place, arrive)
-        if not ok:
+        ok, dwell, assumed = _fit_visit(place, arrive, dwell)
+        if not ok or arrive + timedelta(minutes=dwell) > deadline:
             return False
         if assumed:
             assumed_count[0] += 1
