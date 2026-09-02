@@ -375,3 +375,115 @@ input:focus,select:focus{background:#fff}
 .leaflet-layer.basemap{
   filter:saturate(.45) brightness(1.08) contrast(.92);
 }
+
+/* ═════════ 위치 칩 ═════════ */
+.where{
+  display:flex;align-items:center;gap:8px;padding:6px 12px 6px 9px;
+  border-radius:12px;background:rgba(255,255,255,.6);
+  border:1px solid var(--glass-edge);flex:0 0 auto;text-align:left;
+}
+.where:hover{background:#fff;border-color:var(--primary)}
+.where .pin{font-size:15px;line-height:1}
+.where-body b{display:block;font-size:13px;font-weight:600;line-height:1.3}
+.where-body small{display:block;font-size:10.5px;color:var(--ink-3);line-height:1.3;
+  max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ═════════ 위치 요청 ═════════ */
+.geo-card{
+  max-width:400px;padding:32px 30px;text-align:center;
+  background:var(--glass-strong);
+}
+.geo-mark{font-size:38px;display:block;margin-bottom:10px}
+.geo-card h2{margin:0 0 10px;font-family:var(--round);font-size:19px}
+.geo-card p{margin:0;font-size:13px;color:var(--ink-2);line-height:1.75}
+.geo-actions{display:flex;flex-direction:column;gap:8px;margin-top:22px}
+.geo-actions button{padding:11px 18px;border-radius:12px;font-size:13.5px;font-weight:600}
+.geo-actions .primary{background:linear-gradient(145deg,#3f95d8,#1f7ac4);color:#fff;
+  box-shadow:0 4px 14px rgba(31,122,196,.32)}
+.geo-actions .primary:hover{filter:brightness(1.06)}
+.geo-actions .ghost{background:rgba(255,255,255,.7);color:var(--ink-2);
+  border:1px solid var(--glass-edge)}
+.geo-actions .ghost:hover{background:#fff}
+.geo-note{margin-top:14px!important;font-size:11.5px!important;color:var(--ink-3)!important;
+  min-height:1.2em}
+
+/* ═════════ 일정 컨트롤 ═════════ */
+.controls{flex:0 0 auto;margin-bottom:14px}
+.ctl{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.ctl .lbl{flex:0 0 52px;margin:0;font-size:11px}
+.ctl input[type=datetime-local]{flex:1}
+.seg.small{flex:1;padding:2px}
+.seg.small button{padding:5px 6px;font-size:11.5px;flex:1}
+
+/* ═════════ 일정 요약 ═════════ */
+.plan-head{flex:0 0 auto;padding:13px 15px;margin-bottom:12px;border-radius:13px;
+  background:rgba(255,255,255,.8);border:1px solid var(--glass-edge)}
+.plan-time{font-family:var(--round);font-size:21px;font-weight:600;line-height:1.2;
+  font-variant-numeric:tabular-nums}
+.plan-time span{color:var(--ink-3);margin:0 4px;font-size:16px}
+.plan-meta{display:flex;gap:12px;margin-top:5px;font-size:11.5px;color:var(--ink-2)}
+.budget{height:5px;border-radius:3px;background:rgba(125,146,166,.18);
+  margin-top:10px;overflow:hidden}
+.budget span{display:block;height:100%;border-radius:3px;
+  background:linear-gradient(90deg,#3f95d8,#22a06b)}
+.plan-sub{font-size:11px;color:var(--ink-3);margin-top:5px}
+
+/* ═════════ 타임라인 ═════════ */
+.timeline{list-style:none;margin:0;padding:0}
+.timeline .leg{display:flex;align-items:center;gap:10px;padding:2px 0 2px 26px;
+  position:relative}
+.leg-line{position:absolute;left:12px;top:0;bottom:0;width:2px;
+  background:repeating-linear-gradient(to bottom,var(--glass-edge) 0 4px,transparent 4px 8px)}
+.leg-txt{font-size:11px;color:var(--ink-3);padding:3px 0}
+.leg-txt em{font-style:normal;font-size:9.5px;padding:1px 5px;border-radius:5px;
+  background:rgba(125,146,166,.16);margin-left:5px}
+
+.timeline .stop{
+  position:relative;display:grid;grid-template-columns:26px 46px 1fr;gap:8px;
+  padding:11px 12px 11px 0;margin-bottom:2px;border-radius:13px;cursor:pointer;
+  transition:background .14s;
+}
+.timeline .stop:hover{background:rgba(255,255,255,.75)}
+.timeline .stop.sel{background:#fff;box-shadow:var(--shadow-sm)}
+.timeline .tick{
+  width:24px;height:24px;border-radius:50%;display:grid;place-items:center;
+  font-size:11px;font-weight:700;color:#fff;margin-left:1px;align-self:start;
+}
+.timeline .stop[data-role=anchor] .tick{background:var(--anchor)}
+.timeline .stop[data-role=food] .tick{background:var(--food)}
+.timeline .stop[data-role=spot] .tick{background:var(--primary)}
+.timeline .when{font-size:12.5px;font-weight:600;line-height:1.25;
+  font-variant-numeric:tabular-nums;align-self:start;padding-top:2px}
+.timeline .when small{display:block;font-weight:400;font-size:11px;color:var(--ink-3)}
+.timeline .body .t{font-weight:600;font-size:13.5px;line-height:1.4}
+.timeline .body .m{font-size:11px;color:var(--ink-3);margin-top:2px}
+.timeline .body .l{font-size:11.5px;color:var(--primary);margin-top:5px;line-height:1.5}
+
+.backup{display:flex;gap:11px;align-items:center;margin-top:12px;padding:11px 13px;
+  border-radius:13px;cursor:pointer;background:rgba(124,98,216,.08);
+  border:1px dashed rgba(124,98,216,.35)}
+.backup:hover{background:rgba(124,98,216,.14)}
+.bk-label{flex:0 0 auto;font-size:10px;font-weight:700;padding:3px 8px;
+  border-radius:6px;background:var(--shelter);color:#fff}
+.backup b{display:block;font-size:13px}
+.backup small{display:block;font-size:11px;color:var(--ink-2);margin-top:2px}
+
+.pane.loading{opacity:.55;pointer-events:none;transition:opacity .15s}
+
+.d-when{font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:10px;
+  background:var(--primary-soft);color:#155d97;margin-bottom:12px;
+  font-variant-numeric:tabular-nums}
+
+/* ═════════ 내 위치 ═════════ */
+.me-pin span{display:block;width:18px;height:18px;border-radius:50%;
+  background:var(--primary);border:3px solid #fff;box-sizing:border-box;
+  box-shadow:0 0 0 1px rgba(31,122,196,.5),0 2px 8px rgba(31,63,94,.35)}
+.dot.spot{background:var(--primary)}
+.dot.me{background:var(--primary);box-shadow:0 0 0 2px #fff inset}
+
+@media (max-width:980px){
+  .where-body small{max-width:120px}
+  .geo-card{padding:26px 22px}
+}
+.warn-tag{display:inline-block;font-size:9.5px;padding:1px 6px;border-radius:5px;
+  background:rgba(240,138,52,.16);color:#b56a1e;margin-left:4px;font-weight:600}

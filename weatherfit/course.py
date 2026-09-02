@@ -1,52 +1,65 @@
-"""[C] 코스 구성.
+"""[C] 코스 구성 — 시간표가 있는 반나절 일정.
 
-유효성 판정을 통과한 후보에서 반나절 코스를 만든다.
+목록이 아니라 일정이다. 몇 시에 출발해 몇 시에 도착하고 얼마나 머무는지가
+정해져야 실제로 쓸 수 있다. 그래서 두 가지를 바꿨다.
 
-    오늘의 행사 1곳  +  도보권 로컬 음식 1~2곳  +  날씨 급변 대비 실내 대안 1곳
+**도착 시각에 열려 있는가를 본다.** '지금 열려 있다'는 40분 뒤에 도착할
+장소에는 해당하지 않는 이야기다. 이동 시간을 더한 시각으로 다시 판정한다.
 
-'가까운 순'이 아니라 '오늘 놓치면 사라지는 것 우선'으로 고른다. 종료가 임박한
-행사가 코스의 앵커가 되고, 나머지는 그 주변 도보권에서 붙인다.
+**남은 시간을 지킨다.** "3시간"이라고 했으면 이동과 체류를 합쳐 3시간 안에
+끝나야 한다. 넘치면 거기서 코스를 닫는다.
+
+날씨 대비 실내 대안은 일정에 넣지 않고 따로 둔다. 그건 순서가 아니라
+플랜 B이고, 시간을 소비하지 않기 때문이다.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
-from .models import Content
-from .routing import router
-from .validate import Weather, evaluate
+from .index import Place
+from .routing import haversine_m, router
+from .validate import Weather, check_hours, evaluate_place, parse_ymd
 
-WALK_M_PER_MIN = 67.0          # 도보 4km/h
+# 분류별 표준 체류시간(분). 실제 관광객의 평균 체류에 가깝게 잡았다.
+DWELL = {
+    "축제/공연/행사": 90,
+    "문화관광": 70,
+    "체험관광": 80,
+    "역사관광": 60,
+    "자연관광": 50,
+    "음식": 60,
+    "쇼핑": 45,
+    "숙박": 0,
+}
+DWELL_SUB = {"카페/찻집": 40, "주점": 70, "전시시설": 70, "공연시설": 100}
+DEFAULT_DWELL = 55
 
 
-def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371000.0
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp = math.radians(lat2 - lat1)
-    dl = math.radians(lon2 - lon1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(a))
-
-
-def walk_minutes(meters: float) -> int:
-    return max(1, round(meters / WALK_M_PER_MIN))
+def dwell_minutes(place: Place) -> int:
+    path = place.content.category_path or place.content.category
+    for sub, m in DWELL_SUB.items():
+        if sub in path:
+            return m
+    return DWELL.get(place.content.category, DEFAULT_DWELL)
 
 
 @dataclass
 class Step:
-    item: Content
-    role: str                   # anchor | food | shelter
-    environment: str
-    reason: str                 # 판정 근거
-    line: str = ""              # 사용자에게 보여줄 '왜 지금인지'
-    distance_m: float | None = None
-    walk_min: int | None = None
+    place: Place
+    role: str                       # anchor | food | spot
+    reason: str
+    line: str = ""
+    arrive: datetime | None = None
+    depart: datetime | None = None
+    dwell_min: int = 0
+    travel: dict | None = None      # 앞 장소에서 여기까지
     ends_today: bool = False
-    travel: dict | None = None      # 앞 장소에서 여기까지: 도보/대중교통
+    hours_assumed: bool = False     # 운영정보가 없어 일반 시간대로 가정했는가
 
     def to_dict(self) -> dict:
-        i = self.item
+        i = self.place.content
         return {
             "cid": i.cid, "title": i.title, "category": i.category,
             "category_path": i.category_path, "summary": i.summary,
@@ -55,26 +68,46 @@ class Step:
             "closed_days": i.closed_days_raw, "tags": i.tags,
             "schedule_start": i.schedule_start, "schedule_end": i.schedule_end,
             "accessibility": i.accessibility, "homepage": i.homepage,
-            "role": self.role, "environment": self.environment,
+            "phone": i.phone,
+            "gu": self.place.gu, "dong": self.place.dong,
+            "role": self.role, "environment": self.place.environment,
+            "hours_confidence": self.place.hours.confidence,
             "verdict_reason": self.reason, "line": self.line,
-            "distance_m": round(self.distance_m) if self.distance_m else None,
-            "walk_min": self.walk_min, "ends_today": self.ends_today,
+            "arrive": self.arrive.strftime("%H:%M") if self.arrive else None,
+            "depart": self.depart.strftime("%H:%M") if self.depart else None,
+            "dwell_min": self.dwell_min,
             "travel": self.travel,
+            "walk_min": (self.travel or {}).get("walk", {}).get("minutes"),
+            "ends_today": self.ends_today,
+            "hours_assumed": self.hours_assumed,
         }
 
 
 @dataclass
 class Course:
     steps: list[Step] = field(default_factory=list)
+    backup: Step | None = None          # 날씨가 바뀌면 갈 실내 대안
     weather: Weather | None = None
-    when: datetime | None = None
+    start: datetime | None = None
+    budget_min: int = 240
     notes: list[str] = field(default_factory=list)
 
+    @property
+    def end(self) -> datetime | None:
+        return self.steps[-1].depart if self.steps else self.start
+
     def to_dict(self) -> dict:
-        total_walk = sum(s.walk_min or 0 for s in self.steps)
+        travel = sum(_leg_minutes(s) for s in self.steps)
+        dwell = sum(s.dwell_min for s in self.steps)
         return {
             "steps": [s.to_dict() for s in self.steps],
-            "total_walk_min": total_walk,
+            "backup": self.backup.to_dict() if self.backup else None,
+            "start": self.start.strftime("%H:%M") if self.start else "",
+            "end": self.end.strftime("%H:%M") if self.end else "",
+            "total_min": travel + dwell,
+            "travel_min": travel,
+            "dwell_min": dwell,
+            "budget_min": self.budget_min,
             "weather": {
                 "desc": self.weather.describe() if self.weather else "",
                 "source": getattr(self.weather, "source", ""),
@@ -84,149 +117,204 @@ class Course:
                 "pty": self.weather.pty if self.weather else "없음",
                 "sky": self.weather.sky if self.weather else "맑음",
             },
-            "when": self.when.isoformat() if self.when else "",
+            "when": self.start.isoformat() if self.start else "",
             "notes": self.notes,
         }
 
 
-def _days_left(item: Content, today: date) -> int | None:
-    from .validate import parse_ymd  # 날짜 파서 공유
-    end = parse_ymd(item.schedule_end) or parse_ymd(item.schedule_start)
+def _leg_minutes(step: Step) -> int:
+    tv = step.travel or {}
+    rec = tv.get("recommended")
+    return (tv.get(rec) or {}).get("minutes", 0) if rec else 0
+
+
+def _days_left(place: Place, today: date) -> int | None:
+    c = place.content
+    end = parse_ymd(c.schedule_end) or parse_ymd(c.schedule_start)
     return (end - today).days if end else None
 
 
-def _prefer(cands, interests: list[str] | None):
-    """관심사로 말한 분류를 앞으로 당긴다. 없으면 순서를 건드리지 않는다."""
-    if not interests:
-        return cands
-    want = tuple(interests)
-    hit = [t for t in cands if any(w in (t[0].category_path or t[0].category)
-                                   for w in want)]
-    rest = [t for t in cands if t not in hit]
-    return hit + rest
+def passing(places: list[Place], when: datetime, weather: Weather):
+    """지금 판정을 통과한 후보. (Place, reason)"""
+    for p in places:
+        v, _ = evaluate_place(p, when, weather)
+        if v.ok is True:
+            yield p, v.reason
 
 
-def passing(items: list[Content], when: datetime, weather: Weather):
-    """유효성 판정을 통과한 후보만. (Content, environment, reason) 생성기."""
-    for it in items:
-        verdict, detail = evaluate(it, when, weather)
-        if verdict.ok is True:
-            yield it, detail["environment"], verdict.reason
+# 운영정보가 없는 곳에 적용하는 가정 시간대.
+# 후보 목록에서는 '판정 불가'를 그대로 두지만, 일정에 넣을 때는 다르다.
+# 새벽 4시에 "정보가 없으니 열려 있을지도 모른다"며 넣으면 그건 추천이 아니다.
+ASSUMED_OPEN = (10, 20)
 
 
-def build_course(items: list[Content], when: datetime, weather: Weather,
+def _open_on_arrival(place: Place, arrive: datetime) -> tuple[bool, bool]:
+    """도착 시각에 열려 있는가. (통과 여부, 가정을 적용했는지)"""
+    state = check_hours(place.hours, arrive).ok
+    if state is True:
+        return True, False
+    if state is False:
+        return False, False
+    # 판정 불가 — 일반적인 영업시간대로 가정한다
+    lo, hi = ASSUMED_OPEN
+    return lo <= arrive.hour < hi, True
+
+
+def build_course(places: list[Place], when: datetime, weather: Weather,
                  origin: tuple[float, float] | None = None,
-                 max_walk_min: int = 25, want_food: int = 2,
-                 area_radius_m: float = 4000.0,
-                 interests: list[str] | None = None) -> Course:
-    """반나절 코스 하나를 만든다.
-
-    `origin`이 주어지면 그 반경(`area_radius_m`) 안에서 앵커를 고른다.
-    "강남에서 3시간"이라고 했는데 성수 행사를 앵커로 잡으면 안 되기 때문이다.
-    반경 안에 아무것도 없으면 반경을 풀고 서울 전역에서 다시 찾는다.
-    """
-    course = Course(weather=weather, when=when)
+                 budget_min: int = 240, area_radius_m: float = 4000.0,
+                 interests: list[str] | None = None,
+                 max_stops: int = 5) -> Course:
+    """출발 시각과 남은 시간으로 실제 일정을 짠다."""
+    course = Course(weather=weather, start=when, budget_min=budget_min)
     today = when.date()
+    rt = router()
 
-    pool = list(passing(items, when, weather))
+    pool = [(p, r) for p, r in passing(places, when, weather) if p.lat and p.lon]
     if not pool:
         course.notes.append("지금 조건에 맞는 장소를 찾지 못했습니다.")
         return course
 
-    def near_origin(cands):
+    def near(cands, radius=area_radius_m):
         if not origin:
             return cands
         return [t for t in cands
-                if t[0].lat and t[0].lon
-                and haversine_m(*origin, t[0].lat, t[0].lon) <= area_radius_m]
+                if haversine_m(*origin, t[0].lat, t[0].lon) <= radius]
 
-    all_events = [(i, e, r) for i, e, r in pool if i.is_short_event and i.lat and i.lon]
-    foods = [(i, e, r) for i, e, r in pool if "음식" in (i.category_path or i.category)]
-    indoors = [(i, e, r) for i, e, r in pool if e == "indoor" and i.lat and i.lon]
+    events = [t for t in pool if t[0].content.is_short_event]
+    foods = [t for t in pool if "음식" in (t[0].content.category_path
+                                           or t[0].content.category)]
+    indoors = [t for t in pool if t[0].environment == "indoor"]
 
-    # ---- 앵커 고르기 ----
-    # 순서가 중요하다. "홍대에서 3시간"이라고 했는데 반경 밖 행사를 앵커로 잡으면
-    # 이동에만 40분을 쓴다. 근처 행사 → 근처 상시 콘텐츠 → 그래도 없으면 전역 순.
-    anchor = None
-    near_events = near_origin(all_events)
+    # ---------- 앵커 ----------
+    # "홍대에서 3시간"인데 반경 밖 행사를 앵커로 잡으면 이동에만 40분을 쓴다.
+    # 근처 행사 → 근처 관심사 → 근처 아무거나 → 전역 행사 순.
+    anchor_pick = None
+    near_events = near(events)
     if near_events:
         near_events.sort(key=lambda t: _days_left(t[0], today) or 999)
-        item, env, reason = near_events[0]
-        left = _days_left(item, today)
-        anchor = Step(item, "anchor", env, reason, ends_today=(left == 0))
+        anchor_pick = near_events[0]
     else:
-        near_any = near_origin([t for t in pool if t[0].lat and t[0].lon])
-        near_any = _prefer(near_any, interests)
+        near_any = _prefer(near(pool), interests)
         if near_any:
             if origin:
                 near_any.sort(key=lambda t: haversine_m(*origin, t[0].lat, t[0].lon))
-            item, env, reason = near_any[0]
-            anchor = Step(item, "anchor", env, reason)
+            anchor_pick = near_any[0]
             course.notes.append(
-                "근처에 지금 열린 행사가 없어 상시 콘텐츠로 구성했습니다."
+                "근처에 지금 열린 행사가 없어 상시 콘텐츠로 시작합니다."
                 if weather.outdoor_ok else
-                f"{weather.describe()}로 야외 행사가 빠져, 근처 실내 콘텐츠로 구성했습니다.")
-        elif all_events:
-            all_events.sort(key=lambda t: _days_left(t[0], today) or 999)
-            item, env, reason = all_events[0]
-            left = _days_left(item, today)
-            anchor = Step(item, "anchor", env, reason, ends_today=(left == 0))
+                f"{weather.describe()}로 야외 행사가 빠져, 근처 실내 콘텐츠로 시작합니다.")
+        elif events:
+            events.sort(key=lambda t: _days_left(t[0], today) or 999)
+            anchor_pick = events[0]
             course.notes.append(
                 f"근처 {int(area_radius_m / 1000)}km 안에 조건에 맞는 곳이 없어 "
                 "서울 전역에서 찾았습니다. 이동 시간을 확인해 주세요.")
 
-    if anchor is None:
-        course.notes.append("좌표가 있는 후보가 없어 지도에 표시할 수 없습니다.")
+    if anchor_pick is None:
+        course.notes.append("조건에 맞는 후보를 찾지 못했습니다.")
         return course
-    course.steps.append(anchor)
 
-    base = (anchor.item.lat, anchor.item.lon)
-    if origin:
-        anchor.distance_m = haversine_m(*origin, *base)
-        anchor.walk_min = walk_minutes(anchor.distance_m)
+    # ---------- 일정 쌓기 ----------
+    deadline = when + timedelta(minutes=budget_min)
+    assumed_count = [0]
+    used: set[str] = set()
+    cursor = when
+    here = origin
 
-    used = {anchor.item.cid}
+    def add(pick, role) -> bool:
+        """도착 시각을 계산해 일정에 넣는다. 시간이 모자라면 False."""
+        nonlocal cursor, here
+        place, reason = pick
+        dest = (place.lat, place.lon)
+        travel = rt.best(here, dest) if here else None
+        move = 0
+        if travel:
+            rec = travel["recommended"]
+            move = (travel[rec] or {}).get("minutes", 0)
 
-    def nearby(cands, limit):
-        out = []
-        scored = []
-        for it, env, reason in cands:
-            if it.cid in used or not (it.lat and it.lon):
-                continue
-            d = haversine_m(*base, it.lat, it.lon)
-            if walk_minutes(d) <= max_walk_min:
-                scored.append((d, it, env, reason))
-        scored.sort(key=lambda t: t[0])
-        for d, it, env, reason in scored[:limit]:
-            used.add(it.cid)
-            out.append((d, it, env, reason))
-        return out
+        arrive = cursor + timedelta(minutes=move)
+        dwell = dwell_minutes(place)
+        if arrive + timedelta(minutes=dwell) > deadline:
+            return False
+        ok, assumed = _open_on_arrival(place, arrive)
+        if not ok:
+            return False
+        if assumed:
+            assumed_count[0] += 1
 
-    # ---- 도보권 음식 ----
-    if interests and "음식" in interests:
-        want_food = max(want_food, 3)        # 먹으러 간다고 했으면 더 붙인다
-    for d, it, env, reason in nearby(foods, want_food):
-        course.steps.append(Step(it, "food", env, reason,
-                                 distance_m=d, walk_min=walk_minutes(d)))
+        step = Step(
+            place=place, role=role, reason=reason, travel=travel,
+            arrive=arrive, depart=arrive + timedelta(minutes=dwell),
+            dwell_min=dwell, hours_assumed=assumed,
+            ends_today=(_days_left(place, today) == 0
+                        and place.content.is_short_event),
+        )
+        course.steps.append(step)
+        used.add(place.cid)
+        cursor = step.depart
+        here = dest
+        return True
 
-    # ---- 날씨 급변 대비 실내 대안 ----
-    # 이미 음식을 붙였으므로 대안은 식당 말고 다른 실내 콘텐츠를 먼저 찾는다
-    non_food_indoor = [t for t in indoors
-                       if "음식" not in (t[0].category_path or t[0].category)]
-    shelter = nearby(non_food_indoor, 1) or nearby(indoors, 1)
-    if shelter:
-        d, it, env, reason = shelter[0]
-        course.steps.append(Step(it, "shelter", env, reason,
-                                 distance_m=d, walk_min=walk_minutes(d)))
-    elif anchor.environment == "outdoor":
+    if not add(anchor_pick, "anchor"):
         course.notes.append(
-            "도보권에 실내 대안을 찾지 못했습니다. 날씨가 바뀌면 이동이 필요합니다.")
+            "남은 시간이 짧아 일정을 만들지 못했습니다. 시간을 늘려 보세요.")
+        return course
+
+    def nearest(cands, radius=1200.0):
+        base = here
+        out = []
+        for p, r in cands:
+            if p.cid in used:
+                continue
+            d = haversine_m(*base, p.lat, p.lon)
+            if d <= radius:
+                out.append((d, (p, r)))
+        out.sort(key=lambda t: t[0])
+        return [t[1] for t in out]
+
+    # 식사 시간대면 음식을 먼저, 아니면 관심사를 먼저 붙인다
+    want_food = _is_meal_time(cursor) or (interests and "음식" in interests)
+    order = ["food", "spot"] if want_food else ["spot", "food"]
+
+    while len(course.steps) < max_stops and cursor < deadline:
+        added = False
+        for kind in order:
+            cands = nearest(foods if kind == "food" else _prefer(pool, interests))
+            for pick in cands[:6]:
+                if add(pick, kind if kind == "food" else "spot"):
+                    added = True
+                    break
+            if added:
+                break
+        if not added:
+            break
+        order = ["spot", "food"] if order[0] == "food" else ["food", "spot"]
+
+    # ---------- 플랜 B: 날씨가 바뀌면 갈 실내 ----------
+    shelter_pool = [t for t in indoors
+                    if t[0].cid not in used
+                    and "음식" not in (t[0].content.category_path
+                                      or t[0].content.category)]
+    shelter = nearest(shelter_pool, 1500.0) or nearest(
+        [t for t in indoors if t[0].cid not in used], 1500.0)
+    if shelter:
+        p, r = shelter[0]
+        travel = rt.best(here, (p.lat, p.lon)) if here else None
+        course.backup = Step(place=p, role="shelter", reason=r, travel=travel,
+                             dwell_min=dwell_minutes(p),
+                             line="날씨가 바뀌면 여기로 피할 수 있습니다.")
+    elif not weather.outdoor_ok:
+        course.notes.append("도보권에 실내 대안을 찾지 못했습니다.")
 
     if not weather.outdoor_ok:
-        course.notes.append(
-            f"{weather.describe()} — 실외 장소를 후보에서 제외했습니다.")
+        course.notes.append(f"{weather.describe()} — 실외 장소를 후보에서 제외했습니다.")
 
-    _measure_travel(course, origin)
+    if assumed_count[0]:
+        course.notes.append(
+            f"{assumed_count[0]}곳은 운영시간 정보가 없어 일반적인 영업시간"
+            f"({ASSUMED_OPEN[0]}~{ASSUMED_OPEN[1]}시)으로 가정했습니다. "
+            "방문 전 확인해 주세요.")
 
     for s in course.steps:
         if not s.line:
@@ -234,47 +322,67 @@ def build_course(items: list[Content], when: datetime, weather: Weather,
     return course
 
 
-def _measure_travel(course: Course, origin: tuple[float, float] | None) -> None:
-    """구간마다 실제 도보·대중교통 소요시간을 채운다.
+def _is_meal_time(t: datetime) -> bool:
+    return 11 <= t.hour < 14 or 17 <= t.hour < 21
 
-    앵커는 출발지에서, 나머지는 바로 앞 장소에서 잰다. 경로 API 키가 없으면
-    추정값이 들어가되 provider가 estimate로 표시된다.
-    """
-    rt = router()
-    prev = origin
-    for step in course.steps:
-        if not (step.item.lat and step.item.lon):
-            prev = None
-            continue
-        here = (step.item.lat, step.item.lon)
-        if prev:
-            step.travel = rt.best(prev, here)
-            walk = step.travel["walk"]
-            step.walk_min = walk["minutes"]
-            step.distance_m = walk["distance_m"]
-        prev = here
+
+def _prefer(cands, interests: list[str] | None):
+    """관심사로 말한 분류를 앞으로 당긴다."""
+    if not interests:
+        return cands
+    hit = [t for t in cands
+           if any(w in (t[0].content.category_path or t[0].content.category)
+                  for w in interests)]
+    rest = [t for t in cands if t not in hit]
+    return hit + rest
 
 
 def _default_line(step: Step, weather: Weather, today: date) -> str:
     if step.ends_today:
         return "오늘이 마지막 날입니다."
     if step.role == "anchor":
-        left = _days_left(step.item, today)
-        if left is not None and step.item.is_short_event:
+        left = _days_left(step.place, today)
+        if left is not None and step.place.content.is_short_event:
             if left <= 3:
                 return f"{left}일 뒤 끝납니다. 지금 아니면 놓칩니다."
-            return f"{step.item.schedule_end}까지 열립니다."
-        if step.environment == "indoor":
-            return "실내라 날씨의 영향을 받지 않습니다."
-        if step.environment == "outdoor" and weather.outdoor_ok:
-            return f"{weather.describe()} — 지금 야외 활동에 무리가 없습니다."
-        return "지금 문을 열었습니다."
-    if step.role == "shelter":
-        return "날씨가 바뀌면 여기로 피할 수 있습니다."
-    if step.role == "food" and step.walk_min:
-        return f"앞 장소에서 도보 {step.walk_min}분입니다."
-    if step.environment == "indoor":
+            return f"{step.place.content.schedule_end}까지 열립니다."
+    if step.role == "food":
+        if step.arrive and _is_meal_time(step.arrive):
+            return f"{step.arrive:%H:%M} 도착이면 식사 시간에 맞습니다."
+        return "일정 사이에 쉬어 가기 좋습니다."
+    if step.place.hours.confidence == "high":
+        close = _closing_soon(step)
+        if close:
+            return close
+        return f"{step.arrive:%H:%M}에 문을 열어 두는 곳입니다."
+    if step.place.environment == "indoor":
         return "실내라 날씨의 영향을 받지 않습니다."
-    if step.environment == "outdoor" and weather.outdoor_ok:
-        return f"{weather.describe()} — 지금 야외 활동에 무리가 없습니다."
-    return step.reason
+    if step.place.environment == "outdoor" and weather.outdoor_ok:
+        return f"{weather.describe()} — 야외 활동에 무리가 없습니다."
+    return "이 시각에 이용할 수 있습니다."
+
+
+def _closing_soon(step: Step) -> str | None:
+    """마감이 체류 예정 시간과 겹치면 알려 준다."""
+    if not step.depart:
+        return None
+    wd = step.depart.weekday()
+    for rule in step.place.hours.rules:
+        if wd not in rule.days:
+            continue
+        for _, end in rule.ranges:
+            try:
+                h, m = map(int, end.split(":"))
+            except ValueError:
+                continue
+            closing = step.depart.replace(hour=h % 24, minute=m,
+                                          second=0, microsecond=0)
+            gap = (closing - step.depart).total_seconds() / 60
+            if 0 <= gap <= 45:
+                return f"{end}에 문을 닫습니다. 여유를 두고 움직이세요."
+    return None
+
+
+# 하위 호환 — 기존 호출부가 쓰던 이름
+def walk_minutes(meters: float) -> int:
+    return max(1, round(meters / 67.0))

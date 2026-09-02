@@ -111,12 +111,23 @@ def check_weather(environment: str, weather: Weather) -> Verdict:
 
 
 def evaluate(item: Content, when: datetime, weather: Weather) -> tuple[Verdict, dict]:
-    """한 건에 대한 최종 판정과 중간 근거."""
+    """한 건에 대한 최종 판정과 중간 근거. 정규화를 매번 다시 한다."""
     hours = parse_hours(item.use_time_raw, item.closed_days_raw)
     environment, env_reason = tag_environment(
         item.category, item.title, item.description, item.tags
     )
+    return _judge(item, hours, environment, env_reason, when, weather)
 
+
+def evaluate_place(place, when: datetime, weather: Weather) -> tuple[Verdict, dict]:
+    """미리 정규화해 둔 Place로 판정한다. 요청 경로에서는 이쪽을 쓴다."""
+    return _judge(place.content, place.hours, place.environment,
+                  place.env_reason, when, weather)
+
+
+def _judge(item: Content, hours: OpeningHours, environment: str,
+           env_reason: str, when: datetime,
+           weather: Weather) -> tuple[Verdict, dict]:
     detail = {
         "hours_confidence": hours.confidence,
         "hours_reason": hours.reason,
