@@ -493,6 +493,11 @@ async def no_cache_html(request, call_next):
     """
     response = await call_next(request)
     path = request.url.path
+    if path == "/sw.js":
+        # 서비스 워커 스크립트에 no-store가 붙으면 크롬이 등록을 거부한다.
+        # revalidate만 시키면 배포한 새 워커는 그대로 잡힌다.
+        response.headers["Cache-Control"] = "no-cache"
+        return response
     if (path.endswith((".html", ".css", ".js", "/")) or path == "")             and not path.startswith("/vendor/"):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"

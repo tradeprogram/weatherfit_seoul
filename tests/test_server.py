@@ -332,6 +332,16 @@ class TestOffline:
         sw = client.get("/sw.js").text
         assert "/api/" in sw and "캐시하지 않는다" in sw
 
+    def test_서비스_워커에는_no_store를_붙이지_않는다(self, client):
+        """no-store가 붙으면 크롬이 워커 등록을 거부한다.
+        revalidate만 시키면 새로 배포한 워커는 그대로 잡힌다."""
+        cc = client.get("/sw.js").headers.get("cache-control", "")
+        assert "no-cache" in cc and "no-store" not in cc
+
+    def test_다른_스크립트는_캐시하지_않는다(self, client):
+        cc = client.get("/app.js").headers.get("cache-control", "")
+        assert "no-store" in cc
+
     def test_껍데기를_미리_받아_둔다(self, client):
         sw = client.get("/sw.js").text
         for asset in ("index.html", "style.css", "app.js", "vendor/leaflet.js"):
