@@ -475,9 +475,40 @@ if WEB.exists():
     app.mount("/", StaticFiles(directory=str(WEB), html=True), name="web")
 
 
+def _dual_stack_socket(port: int):
+    """IPv4와 IPv6를 함께 받는 소켓.
+
+    IPv4에만 바인드하면 브라우저가 `localhost`를 ::1로 먼저 풀 때 폴백에
+    2초가 걸린다(실측 2,038ms). 반대로 IPv6에만 바인드하면 127.0.0.1이
+    끊긴다. IPV6_V6ONLY를 끈 소켓 하나로 둘 다 받는다.
+    """
+    import socket
+    try:
+        sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("::", port))
+        sock.listen(128)
+        return sock
+    except OSError:
+        return None                    # IPv6가 없는 환경 — 호출부가 폴백한다
+
+
 def main() -> None:
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", 8020)))
+
+    port = int(os.environ.get("PORT", 8020))
+    host = os.environ.get("HOST")
+    if host:                           # 명시했으면 그대로 따른다
+        uvicorn.run(app, host=host, port=port)
+        return
+
+    sock = _dual_stack_socket(port)
+    if sock is None:
+        uvicorn.run(app, host="0.0.0.0", port=port)
+        return
+    server = uvicorn.Server(uvicorn.Config(app, log_level="info"))
+    server.run(sockets=[sock])
 
 
 if __name__ == "__main__":
