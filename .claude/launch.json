@@ -5,7 +5,8 @@
       "name": "weatherfit",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "weatherfit.server"],
-      "port": 8020
+      "port": 8020,
+      "autoPort": true
     }
   ]
 }

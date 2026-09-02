@@ -25,97 +25,63 @@ const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-/* ───────────────────────── 지도 ───────────────────────── */
+/* ───────────────────────── 지도 ─────────────────────────
+   Leaflet을 쓴다. 필요한 건 래스터 타일·폴리곤·원형 마커·선뿐이고,
+   WebGL이 없는 환경(일부 임베디드 브라우저)에서도 그대로 그려진다.
+   Leaflet 좌표는 [위도, 경도] 순으로 GeoJSON과 반대다.            */
 
-// WebGL 가용 여부를 직접 탐지하면 일부 환경에서 렌더러가 멈춘다.
-// 지도를 그냥 만들어 보고, 정해진 시간 안에 load가 오지 않으면 대체 화면으로 바꾼다.
 function showMapFallback(why) {
-  if (mapReady) return;
   const el = document.getElementById('map');
   if (!el || el.querySelector('.map-fallback')) return;
-  el.innerHTML =
-    '<div class="map-fallback"><b>지도를 표시할 수 없습니다</b>' +
-    '<span>' + why + ' 코스·후보·근거는 왼쪽에서 그대로 확인할 수 있습니다.</span></div>';
+  const box = document.createElement('div');
+  box.className = 'map-fallback';
+  box.innerHTML = '<b>지도를 표시할 수 없습니다</b><span>' + why +
+    ' 코스·후보·근거는 왼쪽에서 그대로 확인할 수 있습니다.</span>';
+  el.appendChild(box);
 }
 
-let map = null;
+let map = null, mapReady = false;
+const layers = { dong:null, cands:null, route:null, steps:null };
+
 try {
-  map = new maplibregl.Map({
-    container:'map',
-    style:{
-      version:8,
-      sources:{
-        carto:{
-          type:'raster',
-          tiles:['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'],
-          tileSize:256,
-          attribution:'&copy; OpenStreetMap contributors &copy; CARTO',
-        },
-      },
-      layers:[{ id:'base', type:'raster', source:'carto' }],
-    },
-    center:[126.9780, 37.5665], zoom:11.2, maxZoom:17, minZoom:9,
-  });
-  map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
-  map.on('error', e => console.warn('map:', e && e.error && e.error.message));
+  map = L.map('map', { zoomControl:true, minZoom:9, maxZoom:16, attributionControl:true })
+         .setView([37.5665, 126.9780], 11);
+  // Esri Dark Gray Canvas — 키가 필요 없고 어두운 UI와 맞는다.
+  // (CARTO 다크 타일은 이제 API 키를 요구해 워터마크가 찍힌다)
+  const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
+  L.tileLayer(ESRI + '/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    attribution:'&copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
+    maxZoom:16, maxNativeZoom:16,
+  }).addTo(map);
+  // 지명 라벨은 별도 레이어다. 경계·마커 아래에 깔린다.
+  L.tileLayer(ESRI + '/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom:16, maxNativeZoom:16, opacity:0.85,
+  }).addTo(map);
+
+  layers.cands = L.layerGroup();
+  layers.route = L.layerGroup().addTo(map);
+  layers.steps = L.layerGroup().addTo(map);
+  mapReady = true;
+
+  // 행정동 경계는 1MB라 지도가 뜬 다음에 얹는다
+  fetch('data/seoul_dong.geojson')
+    .then(r => r.json())
+    .then(gj => {
+      layers.dong = L.geoJSON(gj, {
+        style:{ color:'#4ea8de', weight:0.6, opacity:0.30,
+                fillColor:'#4ea8de', fillOpacity:0.05 },
+        interactive:false,
+      }).addTo(map);
+      if (layers.dong.bringToBack) layers.dong.bringToBack();
+    })
+    .catch(e => console.warn('행정동 경계를 불러오지 못했습니다', e));
+
+  drawMap();
 } catch (e) {
   console.warn('지도를 만들지 못했습니다', e);
   map = null;
+  showMapFallback('이 브라우저에서 지도를 표시할 수 없습니다.');
 }
-
-const EMPTY = { type:'FeatureCollection', features:[] };
-let mapReady = false;
-
-if (map) {
-  setTimeout(() => showMapFallback('지도를 불러오지 못했습니다.'), 9000);
-} else {
-  setTimeout(() => showMapFallback('이 브라우저에서 지도를 지원하지 않습니다.'), 0);
-}
-
-if (map) map.on('load', async () => {
-  // 행정동 경계
-  try {
-    const r = await fetch('data/seoul_dong.geojson');
-    map.addSource('dong', { type:'geojson', data:await r.json() });
-    map.addLayer({ id:'dong-fill', type:'fill', source:'dong',
-      paint:{ 'fill-color':'#4ea8de', 'fill-opacity':0.045 } });
-    map.addLayer({ id:'dong-line', type:'line', source:'dong',
-      paint:{ 'line-color':'#4ea8de', 'line-opacity':0.28, 'line-width':0.6 } });
-  } catch (e) {
-    console.warn('행정동 경계를 불러오지 못했습니다', e);
-  }
-
-  map.addSource('cands', { type:'geojson', data:EMPTY });
-  map.addLayer({ id:'cands', type:'circle', source:'cands',
-    paint:{
-      'circle-radius':['interpolate',['linear'],['zoom'],10,2.2,14,4,16,6],
-      'circle-color':'#5a6a7d', 'circle-opacity':0.75,
-      'circle-stroke-width':0.5, 'circle-stroke-color':'#0d1117',
-    }});
-
-  map.addSource('route', { type:'geojson', data:EMPTY });
-  map.addLayer({ id:'route', type:'line', source:'route',
-    paint:{ 'line-color':'#4ea8de', 'line-width':2, 'line-dasharray':[2,1.4],
-            'line-opacity':0.7 }});
-
-  map.addSource('steps', { type:'geojson', data:EMPTY });
-  map.addLayer({ id:'steps-halo', type:'circle', source:'steps',
-    paint:{ 'circle-radius':13, 'circle-color':['get','color'], 'circle-opacity':0.18 }});
-  map.addLayer({ id:'steps', type:'circle', source:'steps',
-    paint:{ 'circle-radius':7, 'circle-color':['get','color'],
-            'circle-stroke-width':1.5, 'circle-stroke-color':'#0d1117' }});
-  // 순번은 지도에 글자로 찍지 않는다. 글리프 서버가 하나 더 필요해지고,
-  // 코스 순서는 왼쪽 목록이 이미 번호로 보여 준다.
-
-  for (const id of ['cands','steps']) {
-    map.on('click', id, e => selectCid(e.features[0].properties.cid));
-    map.on('mouseenter', id, () => map.getCanvas().style.cursor = 'pointer');
-    map.on('mouseleave', id, () => map.getCanvas().style.cursor = '');
-  }
-
-  mapReady = true;
-  drawMap();          // 지도보다 데이터가 먼저 와 있었다면 이제 그린다
-});
 
 // 지도 타일이 막히거나 늦어도 목록·근거는 나와야 한다
 let booted = false;
@@ -345,35 +311,50 @@ function renderDetail(c) {
 /* ───────────────────────── 지도 그리기 ───────────────────────── */
 
 function drawMap() {
-  if (!mapReady) return;              // 지도가 준비되면 load 핸들러가 다시 부른다
+  if (!mapReady) return;
   const steps = (S.course && S.course.steps || []).filter(s => s.lat && s.lon);
-  map.getSource('steps').setData({
-    type:'FeatureCollection',
-    features: steps.map((s, i) => ({
-      type:'Feature',
-      geometry:{ type:'Point', coordinates:[s.lon, s.lat] },
-      properties:{ cid:s.cid, n:String(i + 1), color:ROLE_COLOR[s.role] || '#4ea8de' },
-    })),
-  });
-  map.getSource('route').setData(steps.length > 1 ? {
-    type:'Feature',
-    geometry:{ type:'LineString', coordinates: steps.map(s => [s.lon, s.lat]) },
-  } : EMPTY);
 
-  const pts = S.showAll ? filtered() : [];
-  map.getSource('cands').setData({
-    type:'FeatureCollection',
-    features: pts.filter(c => c.lat && c.lon).map(c => ({
-      type:'Feature',
-      geometry:{ type:'Point', coordinates:[c.lon, c.lat] },
-      properties:{ cid:c.cid },
-    })),
+  layers.steps.clearLayers();
+  layers.route.clearLayers();
+
+  steps.forEach((s, i) => {
+    const color = ROLE_COLOR[s.role] || '#4ea8de';
+    L.circleMarker([s.lat, s.lon], {
+      radius:16, color:color, weight:0, fillColor:color, fillOpacity:0.16,
+      interactive:false,
+    }).addTo(layers.steps);
+    L.marker([s.lat, s.lon], {
+      icon: L.divIcon({
+        className:'step-pin',
+        html:`<span style="background:${color}">${i + 1}</span>`,
+        iconSize:[22, 22], iconAnchor:[11, 11],
+      }),
+      title: s.title,
+    }).addTo(layers.steps).on('click', () => selectCid(s.cid));
   });
+
+  if (steps.length > 1) {
+    L.polyline(steps.map(s => [s.lat, s.lon]), {
+      color:'#4ea8de', weight:2, opacity:0.7, dashArray:'6 5',
+    }).addTo(layers.route);
+  }
+
+  layers.cands.clearLayers();
+  if (S.showAll) {
+    filtered().filter(c => c.lat && c.lon).forEach(c => {
+      L.circleMarker([c.lat, c.lon], {
+        radius:3.5, color:'#0d1117', weight:0.5,
+        fillColor:'#5a6a7d', fillOpacity:0.8,
+      }).addTo(layers.cands).on('click', () => selectCid(c.cid));
+    });
+  }
 
   if (steps.length) {
-    const b = new maplibregl.LngLatBounds();
-    steps.forEach(s => b.extend([s.lon, s.lat]));
-    map.fitBounds(b, { padding:110, maxZoom:15, duration:700 });
+    const b = L.latLngBounds(steps.map(s => [s.lat, s.lon]));
+    // 화면이 작으면 패딩이 지도보다 커져 fitBounds가 실패한다
+    const el = map.getContainer();
+    const pad = Math.max(12, Math.min(70, Math.floor(Math.min(el.clientWidth, el.clientHeight) / 6)));
+    map.fitBounds(b, { padding:[pad, pad], maxZoom:15 });
   }
 }
 
@@ -385,9 +366,8 @@ function selectCid(cid) {
   renderDetail(merged);
   $$('#course-list li, #cand-list li').forEach(li =>
     li.classList.toggle('sel', li.dataset.cid === cid));
-  if (map && merged.lat && merged.lon) {
-    map.flyTo({ center:[merged.lon, merged.lat], zoom:Math.max(map.getZoom(), 14.5),
-                duration:600 });
+  if (mapReady && merged.lat && merged.lon) {
+    map.setView([merged.lat, merged.lon], Math.max(map.getZoom(), 15), { animate:true });
   }
 }
 
@@ -421,14 +401,16 @@ function bindUI() {
   });
 
   $('#btn-dong').onclick = e => {
-    if (!map) return;
     const on = e.target.classList.toggle('on');
-    ['dong-fill', 'dong-line'].forEach(l => {
-      if (map.getLayer(l)) map.setLayoutProperty(l, 'visibility', on ? 'visible' : 'none');
-    });
+    if (!mapReady || !layers.dong) return;
+    on ? layers.dong.addTo(map) : map.removeLayer(layers.dong);
+    if (on && layers.dong.bringToBack) layers.dong.bringToBack();
   };
   $('#btn-all').onclick = e => {
     S.showAll = e.target.classList.toggle('on');
+    if (mapReady) {
+      S.showAll ? layers.cands.addTo(map) : map.removeLayer(layers.cands);
+    }
     drawMap();
   };
 

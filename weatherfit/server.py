@@ -312,6 +312,21 @@ def _gu_center(gu_short: str) -> tuple[float, float] | None:
 
 # ----------------------------------------------------------------- 정적 파일
 
+@app.middleware("http")
+async def no_cache_html(request, call_next):
+    """HTML은 캐시하지 않는다.
+
+    index.html이 캐시되면 스크립트 경로를 바꿔도 브라우저가 옛 파일을 계속
+    불러온다. 파일명에 ?v= 를 붙여도 그 참조를 담은 HTML 자체가 낡으면 소용없다.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.endswith((".html", "/")) or path == "":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 if WEB.exists():
     app.mount("/", StaticFiles(directory=str(WEB), html=True), name="web")
 
