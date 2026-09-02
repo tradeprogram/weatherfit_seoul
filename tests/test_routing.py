@@ -147,3 +147,27 @@ class TestMeasureLegs:
         c = self.build()
         _measure_legs(c, FakeRouter(5), CITY_HALL, NOON.replace(hour=17))
         assert all(s.travel["walk"]["exact"] is True for s in c.steps)
+
+
+class TestCache:
+    def test_실측은_기억한다(self):
+        r = Routing(offline=True)
+        leg = estimate_walk(CITY_HALL, (37.5700, 126.9820))
+        key = r._key("walk", CITY_HALL, (37.5700, 126.9820))
+        r._remember(key, leg)
+        assert r.walk(CITY_HALL, (37.5700, 126.9820)) is leg
+
+    def test_추정은_기억하지_않는다(self):
+        """추정은 실측이 오면 대체될 임시값이다. 캐시에 눌러앉으면
+        나중에 실측을 부르려 해도 추정이 계속 돌아온다."""
+        r = Routing(offline=True)
+        r.walk(CITY_HALL, (37.5700, 126.9820))
+        assert r._cache == {}
+
+    def test_상한을_넘으면_오래된_것부터_버린다(self):
+        from weatherfit.routing import CACHE_MAX
+        r = Routing(offline=True)
+        leg = estimate_walk(CITY_HALL, CITY_HALL)
+        for i in range(CACHE_MAX + 10):
+            r._remember(("walk", i, 0, 0, 0), leg)
+        assert len(r._cache) < CACHE_MAX

@@ -183,7 +183,7 @@ web/
   app.js         Leaflet, 위치·일정·대화·주변·근거
   style.css      밝은 낮의 서울 — 글라스모피즘
   vendor/        Leaflet (CDN 의존을 없애기 위해 동봉)
-tests/           169개. 실제로 났던 회귀를 그대로 박아 둔다
+tests/           172개. 실제로 났던 회귀를 그대로 박아 둔다
 ```
 
 자세한 설계 판단은 [ARCHITECTURE.md](ARCHITECTURE.md).

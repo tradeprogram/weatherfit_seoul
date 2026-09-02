@@ -41,6 +41,7 @@ OSRM_UA = {"User-Agent": "weatherfit-seoul/1.0 (tourism course planner; "
                          "https://github.com/tradeprogram/weatherfit_seoul)"}
 OSRM_TIMEOUT = 4                 # 느리면 추정으로 넘어간다. 화면을 붙잡지 않는다
 OSRM_COOLDOWN = 300              # 막힌 뒤 다시 시도하기까지
+CACHE_MAX = 20000                # 구간 캐시 상한. 오래 켜 두면 계속 쌓인다
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -124,6 +125,14 @@ class Routing:
     def _key(mode: str, o: tuple[float, float], d: tuple[float, float]) -> tuple:
         return (mode, round(o[0], 5), round(o[1], 5), round(d[0], 5), round(d[1], 5))
 
+    def _remember(self, key: tuple, leg: Leg) -> Leg:
+        """구간 캐시. 오래 켜 두면 무한정 늘어나므로 상한을 둔다."""
+        if len(self._cache) >= CACHE_MAX:
+            for k in list(self._cache)[:CACHE_MAX // 4]:
+                del self._cache[k]
+        self._cache[key] = leg
+        return leg
+
     # ---------- 도보: TMAP 보행자 경로 ----------
 
     def walk(self, o: tuple[float, float], d: tuple[float, float],
@@ -168,8 +177,7 @@ class Routing:
                 )
             except Exception:
                 pass                          # 추정값을 그대로 쓴다
-        self._cache[key] = leg
-        return leg
+        return self._remember(key, leg)
 
     def measure_many(self, pairs: list[tuple]) -> list[dict]:
         """여러 구간을 동시에 실측한다. 순서는 그대로 돌려준다.
@@ -254,8 +262,7 @@ class Routing:
                 )
             except Exception:
                 pass
-        self._cache[key] = leg
-        return leg
+        return self._remember(key, leg)
 
     # ---------- 자동차: 네이버 Directions 5 ----------
 
@@ -290,8 +297,7 @@ class Routing:
                           exact=True)
             except Exception:
                 pass
-        self._cache[key] = leg
-        return leg
+        return self._remember(key, leg)
 
     # ---------- 구간에 맞는 수단 고르기 ----------
 
