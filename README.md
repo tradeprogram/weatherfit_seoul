@@ -1,72 +1,95 @@
 # 웨더핏 서울 (WeatherFit Seoul)
 
-오늘 날씨에, 지금 열려 있는 곳만 골라 짜는 AI 서울 코스.
+**오늘 날씨에, 지금 열려 있는 곳만 골라 짜는 AI 서울 코스**
+
 2026 서울관광재단 비짓서울 API 데이터·AI 활용 아이디어 공모전 출품작.
 
-## 이 저장소의 목적
+서울을 찾은 외국인 관광객이 겪는 가장 흔한 실패는 코스가 시시한 것이 아니라
+**갔는데 없는 것**이다. 이미 끝난 축제, 오늘 문을 닫은 가게, 비가 와서 못 하게
+된 야외 일정. 웨더핏 서울은 비짓서울 API의 관광 콘텐츠에 *지금 갈 수 있는가*를
+판정하는 계층을 얹어, 통과한 것만으로 반나절 코스를 만든다.
 
-공모전 제출물은 3장짜리 문서이고 데모 심사가 없다. 따라서 이 코드는 제품이 아니라
-**제안서의 주장을 실측으로 뒷받침하기 위한 것**이다. 구체적으로 두 가지를 증명한다.
-
-1. 비짓서울 API의 운영정보(이용시간·휴무일)가 실제로 얼마나 비정형인가 —
-   규칙 기반으로 몇 %가 파싱되고, 몇 %가 LLM 없이는 판정 불가인가
-2. 시간 유효성 필터를 씌우면 후보군이 실제로 얼마나 줄어드는가
-
-## 파이프라인
-
-```
-collect  →  normalize  →  validate  →  report
-수집         정규화          유효성 판정      근거 수치
-```
-
-| 단계 | 하는 일 | 산출물 |
-|---|---|---|
-| `collect` | 콘텐츠 목록/상세 수집 | `data/raw/*.json` |
-| `normalize` | 이용시간·휴무일 자유 문장 → 구조화 시간표, 실내/실외 태깅 | `data/normalized.json` |
-| `validate` | 현재 시각·날씨 기준 "지금 갈 수 있는가" 판정 | — |
-| `report` | 제안서에 쓸 수치 집계 | `data/report.md` |
-
-## 데이터 소스
-
-공식 API(`api-call.visitseoul.net`)는 `VISITSEOUL-API-KEY` 헤더를 요구한다.
-키 발급 전까지는 공개 카탈로그(`api.visitseoul.net/contents/standard`)를 소스로 쓴다.
-두 소스는 `sources/` 아래에서 같은 인터페이스를 구현하므로 키가 생기면 교체만 하면 된다.
+## 빠른 시작
 
 ```bash
-# 키 없이 (공개 카탈로그)
-python -m weatherfit.collect --source catalog --category 축제
+pip install -r requirements.txt
 
-# 키 발급 후
-VISITSEOUL_API_KEY=... python -m weatherfit.collect --source api
-```
-
-## 사용법
-
-```bash
-python -m weatherfit.collect --category 축제      # 수집 (중단 후 재실행하면 이어받음)
+# 1. 콘텐츠 수집 (키 없이 공개 카탈로그에서, 약 15분)
 python -m weatherfit.collect --all
-python -m weatherfit.report --at "2026-09-02 14:00"
-python -m weatherfit.report --rain                # 우천 시나리오로 재판정
+
+# 2. 행정동 경계 생성 (통계청 shapefile 필요)
+python -c "from weatherfit.geo import build_seoul_geojson as b; b(r'경로/BND_ADM_DONG_PG.shp')"
+
+# 3. 서버
+python -m weatherfit.server        # http://127.0.0.1:8020
 ```
 
-## 상태
+근거 수치만 뽑고 싶다면:
 
-- [x] 카테고리별·어권별 건수 실측 (제안서 [도표 1]의 근거)
-- [x] 콘텐츠 수집기 (`collect`) — 공개 카탈로그
-- [x] 운영정보 정규화 + 신뢰도 측정 (`normalize`)
-- [x] 유효성 필터 (`validate`)
-- [x] 근거 리포트 생성 (`report`)
-- [ ] 전체 카테고리 수집 완료
-- [ ] LLM 정규화 어댑터 — 규칙이 못 푸는 구간 담당
-- [ ] 공식 API 소스 실검증 (키 발급 대기)
+```bash
+python -m weatherfit.report --at "2026-09-02 14:00"
+python -m weatherfit.report --rain          # 우천 시나리오로 재판정
+```
 
-## 지금까지 나온 수치 (축제 338건 표본)
+## API 키
 
-| 항목 | 값 | 의미 |
+**셋 다 없어도 전부 동작한다.** 없으면 규칙·기본값으로 떨어지고, 무엇이 쓰였는지는
+`/api/health`와 화면 상단에 항상 표시된다. `.env.example` 참고.
+
+| 변수 | 없을 때 |
+|---|---|
+| `VISITSEOUL_API_KEY` | 공개 카탈로그를 소스로 수집 |
+| `KMA_API_KEY` | 맑음 21°C 기본값으로 판정 |
+| `ANTHROPIC_API_KEY` | 규칙 기반 정규화·설명 문장 |
+
+## 이 저장소가 증명하는 것
+
+제출물은 3장짜리 문서이고 데모 심사가 없다. 그래서 이 코드는 제품이 아니라
+**제안서의 주장을 실측으로 뒷받침하기 위한 것**이다.
+
+| 항목 | 측정값 | 뜻 |
 |---|---:|---|
-| 운영시간이 규칙만으로 확정 | **6.8%** | 나머지 93.2%가 LLM의 몫 |
+| 운영시간이 규칙만으로 확정 | **6.8%** | 나머지가 LLM 정규화의 몫 |
 | 실내·실외 판정 불가 | **50.9%** | 날씨 대응의 전제가 비어 있음 |
-| 이미 종료된 행사 | **97.3%** | 목록 API에는 기간 필드가 없음 |
-| 필터 통과 (9/2 14시, 맑음) | **338 → 6건** | 유효성 레이어의 효과 |
+| 이미 종료된 행사 | **97.3%** | 목록 API에는 기간 필드가 없다 |
 
-전량 수집이 끝나면 `report`를 다시 돌려 최종 수치를 확정한다.
+*축제 338건 표본 기준. 전량 수집 후 `python -m weatherfit.report`로 갱신한다.*
+
+## 구조
+
+```
+weatherfit/
+  models.py      Content 도메인 모델, 카테고리 코드
+  sources/       catalog(공개 HTML) · api(공식 API) — 같은 인터페이스
+  collect.py     수집 CLI. cid 기준으로 재개 가능
+  normalize.py   자유 문장 운영시간 → 구조화 시간표, 실내외 태깅
+  validate.py    기간·날씨·운영 4단 판정. 탈락과 판정불가를 구분
+  course.py      종료 임박 행사를 앵커로 도보권 코스 구성
+  weather.py     기상청 초단기실황 (격자 변환 포함)
+  llm.py         LLM 어댑터. 없으면 규칙으로 폴백
+  geo.py         행정동 경계 추출·좌표 매칭
+  report.py      근거 수치 리포트
+  server.py      FastAPI + 정적 파일
+web/
+  index.html     3분할 UI (조건·코스 / 지도 / 상세)
+  app.js         MapLibre, 후보·근거 렌더
+  style.css
+```
+
+자세한 설계 판단은 [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## 엔드포인트
+
+| 경로 | 하는 일 |
+|---|---|
+| `GET /api/health` | 적재 건수, 키 보유 여부 |
+| `GET /api/weather` | 현재 기상 (`mode=auto\|clear\|rain\|heat`) |
+| `GET /api/candidates` | 판정 결과가 붙은 후보 목록 |
+| `GET /api/course` | 반나절 코스 (`explain=true`면 LLM 설명) |
+| `GET /api/stats` | 근거 수치 + 자치구 분포 |
+| `POST /api/chat` | 자연어 한 줄 → 코스 |
+
+## 데이터 출처
+
+관광 콘텐츠 [비짓서울 API](https://api.visitseoul.net) · 행정동 경계 통계청
+`BND_ADM_DONG_PG` · 기상 기상청 초단기실황 · 지도 배경 OpenStreetMap / CARTO

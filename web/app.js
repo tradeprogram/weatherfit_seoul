@@ -27,10 +27,27 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
 
 /* ───────────────────────── 지도 ───────────────────────── */
 
-const map = new maplibregl.Map({
+function webglOK() {
+  try {
+    const c = document.createElement('canvas');
+    return !!(c.getContext('webgl2') || c.getContext('webgl'));
+  } catch (e) { return false; }
+}
+
+let map = null;
+const mapAvailable = typeof maplibregl !== 'undefined' && webglOK();
+
+if (!mapAvailable) {
+  document.getElementById('map').innerHTML =
+    '<div class="map-fallback"><b>지도를 표시할 수 없습니다</b>' +
+    '<span>이 브라우저에서 WebGL을 사용할 수 없습니다. 코스·후보·근거는 왼쪽에서 그대로 확인할 수 있습니다.</span></div>';
+}
+
+if (mapAvailable) map = new maplibregl.Map({
   container:'map',
   style:{
     version:8,
+    glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
     sources:{
       carto:{
         type:'raster',
@@ -43,11 +60,15 @@ const map = new maplibregl.Map({
   },
   center:[126.9780, 37.5665], zoom:11.2, maxZoom:17, minZoom:9,
 });
-map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
+if (map) {
+  map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
+  map.on('error', e => console.warn('map:', e && e.error && e.error.message));
+}
 
 const EMPTY = { type:'FeatureCollection', features:[] };
+let mapReady = false;
 
-map.on('load', async () => {
+if (map) map.on('load', async () => {
   // 행정동 경계
   try {
     const r = await fetch('data/seoul_dong.geojson');
@@ -91,8 +112,15 @@ map.on('load', async () => {
     map.on('mouseleave', id, () => map.getCanvas().style.cursor = '');
   }
 
-  boot();
+  mapReady = true;
+  drawMap();          // 지도보다 데이터가 먼저 와 있었다면 이제 그린다
 });
+
+// 지도 타일이 막히거나 늦어도 목록·근거는 나와야 한다
+let booted = false;
+function bootOnce() { if (!booted) { booted = true; boot(); } }
+document.addEventListener('DOMContentLoaded', bootOnce);
+if (document.readyState !== 'loading') bootOnce();
 
 /* ───────────────────────── 데이터 ───────────────────────── */
 
@@ -316,6 +344,7 @@ function renderDetail(c) {
 /* ───────────────────────── 지도 그리기 ───────────────────────── */
 
 function drawMap() {
+  if (!mapReady) return;              // 지도가 준비되면 load 핸들러가 다시 부른다
   const steps = (S.course && S.course.steps || []).filter(s => s.lat && s.lon);
   map.getSource('steps').setData({
     type:'FeatureCollection',
@@ -355,7 +384,7 @@ function selectCid(cid) {
   renderDetail(merged);
   $$('#course-list li, #cand-list li').forEach(li =>
     li.classList.toggle('sel', li.dataset.cid === cid));
-  if (merged.lat && merged.lon) {
+  if (map && merged.lat && merged.lon) {
     map.flyTo({ center:[merged.lon, merged.lat], zoom:Math.max(map.getZoom(), 14.5),
                 duration:600 });
   }
@@ -391,6 +420,7 @@ function bindUI() {
   });
 
   $('#btn-dong').onclick = e => {
+    if (!map) return;
     const on = e.target.classList.toggle('on');
     ['dong-fill', 'dong-line'].forEach(l => {
       if (map.getLayer(l)) map.setLayoutProperty(l, 'visibility', on ? 'visible' : 'none');
