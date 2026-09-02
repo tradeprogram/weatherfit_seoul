@@ -228,7 +228,8 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                  interests: list[str] | None = None,
                  max_stops: int = 5,
                  taste: Taste | None = None,
-                 exclude: set[str] | None = None) -> Course:
+                 exclude: set[str] | None = None,
+                 avoid: tuple[str, ...] = ()) -> Course:
     """출발 시각과 남은 시간으로 실제 일정을 짠다."""
     course = Course(weather=weather, start=when, budget_min=budget_min)
     today = when.date()
@@ -238,7 +239,9 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     skip = set(taste.disliked) if taste else set()
     skip |= (exclude or set())
     pool = [(p, r) for p, r in passing(places, when, weather)
-            if p.lat and p.lon and is_touristic(p) and p.cid not in skip]
+            if p.lat and p.lon and is_touristic(p) and p.cid not in skip
+            and not any(a in (p.content.category_path or p.content.category)
+                        for a in avoid)]
     if not pool:
         course.notes = _diagnose(when, budget_min, weather, 0, origin)
         return course

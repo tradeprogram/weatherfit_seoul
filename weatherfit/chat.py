@@ -52,6 +52,11 @@ GU_SHORT = ("종로|중구|용산|성동|광진|동대문|중랑|성북|강북|�
 _GU_RE = re.compile(f"({GU_SHORT})")
 _LANDMARK_RE = re.compile("(" + "|".join(sorted(LANDMARKS, key=len, reverse=True)) + ")")
 _HOUR_RE = re.compile(r"(\d+)\s*시간")
+# "3시부터"는 시작 시각, "3시간"은 길이다. 뒤에 '간'이 오면 이 패턴이 아니다.
+_START_RE = re.compile(r"(오전|오후|저녁|밤|아침|낮)?\s*(\d{1,2})\s*시(?!간)")
+_WHEN_WORDS = {"아침": 9, "점심": 12, "낮": 14, "오후": 15, "저녁": 18, "밤": 20}
+NEAR_WORDS = ("가까운", "가까이", "멀지 않", "근처", "걸어서", "도보로만")
+FAR_OK_WORDS = ("멀어도", "좀 멀", "어디든")
 
 RAIN_WORDS = ("비 ", "비가", "비오", "비 오", "우천", "소나기", "장마", "빗")
 HEAT_WORDS = ("더위", "더운", "덥", "폭염", "무더")
@@ -74,7 +79,9 @@ class Intent:
     lon: float = SEOUL_CITY_HALL[1]
     weather_mode: str = "auto"
     hours: float | None = None
+    start_hour: int | None = None     # "오후 3시부터"
     max_walk_min: int = 25
+    walk_limited: bool = False        # 거리를 직접 말했는가
     interests: list[str] = field(default_factory=list)
     party: str | None = None          # 혼자 | 커플 | 가족 | 친구
     language: str = "ko"
@@ -83,7 +90,9 @@ class Intent:
     def to_dict(self) -> dict[str, Any]:
         return {
             "area": self.area, "weather_mode": self.weather_mode,
-            "hours": self.hours, "max_walk_min": self.max_walk_min,
+            "hours": self.hours, "start_hour": self.start_hour,
+            "max_walk_min": self.max_walk_min,
+            "walk_limited": self.walk_limited,
             "interests": self.interests, "party": self.party,
             "language": self.language, "engine": self.engine,
         }
@@ -98,6 +107,7 @@ def parse_intent_rules(message: str, prev: Intent | None = None) -> Intent:
         it.area, it.lat, it.lon = prev.area, prev.lat, prev.lon
         it.weather_mode = prev.weather_mode
         it.hours, it.max_walk_min = prev.hours, prev.max_walk_min
+        it.start_hour, it.walk_limited = prev.start_hour, prev.walk_limited
         it.interests, it.party = list(prev.interests), prev.party
 
     msg = message.strip()
@@ -122,6 +132,27 @@ def parse_intent_rules(message: str, prev: Intent | None = None) -> Intent:
         it.hours, it.max_walk_min = 4.0, 30
     elif "잠깐" in msg or "짧게" in msg:
         it.hours, it.max_walk_min = 1.5, 12
+
+    # 시작 시각. "3시간"과 헷갈리지 않게 '간'을 배제한 뒤에 본다.
+    if (m := _START_RE.search(msg)):
+        h = int(m.group(2))
+        ap = m.group(1)
+        if ap in ("오후", "저녁", "밤") and h < 12:
+            h += 12
+        if 0 <= h <= 23:
+            it.start_hour = h
+    else:
+        for word, h in _WHEN_WORDS.items():
+            if word + "에" in msg or word + "부터" in msg:
+                it.start_hour = h
+                break
+
+    # 거리 표현은 말했을 때만 반영한다. 말하지 않았으면 남은 시간에 맞춘
+    # 기본 반경을 쓴다 — 여기서 늘 좁히면 4시간짜리도 동네 한 바퀴가 된다.
+    if any(w in msg for w in NEAR_WORDS):
+        it.max_walk_min, it.walk_limited = 12, True
+    elif any(w in msg for w in FAR_OK_WORDS):
+        it.max_walk_min, it.walk_limited = 40, True
 
     found = [cat for cat, words in INTEREST_WORDS.items()
              if any(w in msg for w in words)]
@@ -238,6 +269,35 @@ def _course_text(steps: list[dict]) -> str:
     return "\n".join(out)
 
 
+def _applied_line(intent: Intent, course: dict, message: str) -> str:
+    """이번 답에 무엇이 반영됐는지 한 줄로 적는다."""
+    bits = []
+    if intent.area:
+        bits.append(f"{intent.area} 기준")
+    start = course.get("start")
+    if intent.start_hour is not None and start:
+        bits.append(f"{start}부터")
+    if intent.hours:
+        h = intent.hours
+        bits.append(f"{int(h) if h == int(h) else h}시간에 맞춰")
+    if intent.interests:
+        bits.append(" · ".join(intent.interests) + " 위주로")
+    if intent.party:
+        bits.append({"가족": "아이와 함께 가기 좋은 곳으로",
+                     "커플": "둘이 가기 좋은 곳으로",
+                     "친구": "여럿이 가기 좋은 곳으로",
+                     "혼자": "혼자 다니기 좋은 곳으로"}[intent.party])
+    if intent.walk_limited and intent.max_walk_min <= 12:
+        bits.append("걸어서 닿는 거리만")
+    for mood in ("조용", "활기", "이색", "전통", "현대"):
+        if mood in message:
+            bits.append(f"{mood}한 쪽으로")
+            break
+    if not bits:
+        return "현재 위치 기준으로 지금 갈 수 있는 곳만 골랐습니다."
+    return "지금 갈 수 있는 곳 중에서 " + ", ".join(bits) + " 골랐습니다."
+
+
 def compose_reply(message: str, intent: Intent, course: dict,
                   llm: LLM | None = None) -> tuple[str, str]:
     """(답변 문장, engine)"""
@@ -261,9 +321,10 @@ def compose_reply(message: str, intent: Intent, course: dict,
         except Exception:
             pass
 
-    # 템플릿 답변 — 키가 없어도 대화가 성립해야 한다
-    where = intent.area or "현재 위치"
-    head = f"{where} 기준으로 지금 갈 수 있는 곳만 골랐습니다. 날씨는 {weather}입니다."
+    # 템플릿 답변 — 키가 없어도 대화가 성립해야 한다.
+    # 무엇을 반영했는지 첫 줄에 적는다. 늘 같은 문장이면 사용자는 자기가
+    # 말한 조건이 들어간 건지 알 수 없고, 그건 대화가 아니라 안내문이다.
+    head = _applied_line(intent, course, message) + f" 날씨는 {weather}입니다."
     body = []
     for i, s in enumerate(steps, 1):
         tv = s.get("travel") or {}

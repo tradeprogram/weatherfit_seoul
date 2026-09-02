@@ -272,3 +272,50 @@ class TestLanguages:
             plan = client.post("/api/plan", json={**SEOUL, "hours": 4,
                                                   "at": AT, "lang": lang}).json()
             assert any(s["text_lang"] == lang for s in plan["steps"])
+
+
+class TestChatIntentDetail:
+    """대화에서 말한 조건이 실제로 일정에 반영되는가."""
+
+    def ask(self, client, text, at=AT):
+        return client.post("/api/chat", json={
+            "messages": [{"role": "user", "content": text}], "at": at}).json()
+
+    def test_시작_시각을_반영한다(self, client):
+        """'오후 3시부터'를 흘리면 3시 일정을 달라고 했는데 지금 시각으로 짠다."""
+        d = self.ask(client, "오후 3시부터 3시간", at="2026-09-03T10:00")
+        assert d["intent"]["start_hour"] == 15
+        assert d["course"]["start"] == "15:00"
+
+    def test_시간_길이와_시작_시각을_헷갈리지_않는다(self):
+        from weatherfit.chat import parse_intent_rules
+        it = parse_intent_rules("3시간만 있어요")
+        assert it.hours == 3.0 and it.start_hour is None
+
+    @pytest.mark.parametrize("text,hour", [
+        ("저녁에 2시간", 18), ("아침에 갈 만한 곳", 9), ("밤 9시에", 21),
+    ])
+    def test_시간대_표현도_읽는다(self, text, hour):
+        from weatherfit.chat import parse_intent_rules
+        assert parse_intent_rules(text).start_hour == hour
+
+    def test_아이와_함께면_주점을_빼고_말해_준다(self, client):
+        d = self.ask(client, "아이랑 같이 갈 만한 곳")
+        assert d["intent"]["party"] == "가족"
+        assert all("주점" not in (s["category_path"] or "")
+                   for s in d["course"]["steps"])
+        assert "아이와 함께" in d["reply"]
+
+    def test_가까운_데로만_하면_반경이_좁아진다(self, client):
+        wide = self.ask(client, "성수에서 4시간")
+        near = self.ask(client, "성수에서 가까운 데로만")
+        assert near["intent"]["walk_limited"] is True
+        assert wide["intent"]["walk_limited"] is False
+
+    def test_무엇을_반영했는지_답에_적는다(self, client):
+        """늘 같은 문장이면 사용자는 자기 말이 들어갔는지 알 수 없다."""
+        plain = self.ask(client, "추천해 주세요")["reply"].splitlines()[0]
+        rich = self.ask(client, "북촌에서 전시 보고 밥 먹고 싶어요")
+        first = rich["reply"].splitlines()[0]
+        assert first != plain
+        assert "북촌" in first and "음식" in first

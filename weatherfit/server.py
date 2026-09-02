@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from .chat import LANDMARKS, Intent, compose_reply, parse_intent
 from .popularity import scores as popularity_scores
-from .taste import Taste, mood_interests
+from .taste import PARTY_AVOID, PARTY_TAGS, Taste, mood_interests
 from .course import build_course
 from .index import Index, build_index
 from .llm import LLM
@@ -253,7 +253,8 @@ def make_course(lat: float, lon: float, mode: str = "auto",
                 at: str | None = None, hours: float = 4.0,
                 radius_m: int = 4000, interests: str = "",
                 explain: bool = False, taste: Taste | None = None,
-                lang: str = "ko", exclude: list[str] | None = None) -> dict:
+                lang: str = "ko", exclude: list[str] | None = None,
+                avoid: tuple[str, ...] = ()) -> dict:
     """코스 생성 본체.
 
     엔드포인트를 파이썬 함수로 직접 부르면 FastAPI의 Query 기본값이
@@ -274,7 +275,7 @@ def make_course(lat: float, lon: float, mode: str = "auto",
         budget_min=int(hours * 60),
         area_radius_m=float(radius_m) if radius_m != 4000 else radius_for(hours),
         interests=[x for x in interests.split(",") if x],
-        taste=taste, exclude=set(exclude or []),
+        taste=taste, exclude=set(exclude or []), avoid=avoid,
     )
     out = c.to_dict(lang)
     out["engine"] = "rules"
@@ -401,6 +402,15 @@ class ChatIn(BaseModel):
     lang: str = "ko"
 
 
+def _shift_start(at: str | None, hour: int | None) -> str | None:
+    """대화에서 말한 시작 시각을 반영한다. "오후 3시부터"를 흘리면
+    3시 일정을 달라고 했는데 지금 시각으로 짜 주게 된다."""
+    if hour is None:
+        return at
+    base = parse_when(at)
+    return base.replace(hour=hour, minute=0).strftime("%Y-%m-%dT%H:%M")
+
+
 @app.post("/api/chat")
 def chat(body: ChatIn):
     """대화 한 턴. 의도를 뽑고, 판정 엔진이 일정을 만들고, 말로 옮긴다."""
@@ -434,10 +444,16 @@ def chat(body: ChatIn):
         taste.declare(intent.interests, weight=1.5)
     for tag in mood_interests(message):          # "조용한 데", "이색적인 곳"
         taste.tags[tag] = taste.tags.get(tag, 0.0) + 0.8
+    for tag in PARTY_TAGS.get(intent.party or "", ()):
+        taste.tags[tag] = taste.tags.get(tag, 0.0) + 0.6
 
+    at = _shift_start(body.at, intent.start_hour)
     result = make_course(lat=intent.lat, lon=intent.lon, mode=intent.weather_mode,
-                         at=body.at, hours=float(intent.hours or 4.0),
+                         at=at, hours=float(intent.hours or 4.0),
+                         radius_m=(int(intent.max_walk_min * 67)
+                                   if intent.walk_limited else 4000),
                          interests=",".join(intent.interests), taste=taste,
+                         avoid=PARTY_AVOID.get(intent.party or "", ()),
                          lang=intent.language if intent.language in ("ko", "en",
                               "ja", "zh-CN", "zh-TW", "ru", "ms") else body.lang)
 
