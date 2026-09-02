@@ -458,14 +458,17 @@ def _gu_center(gu_short: str) -> tuple[float, float] | None:
 
 @app.middleware("http")
 async def no_cache_html(request, call_next):
-    """HTML은 캐시하지 않는다.
+    """화면을 이루는 파일은 캐시하지 않는다.
 
     index.html이 캐시되면 스크립트 경로를 바꿔도 브라우저가 옛 파일을 계속
     불러온다. 파일명에 ?v= 를 붙여도 그 참조를 담은 HTML이 낡으면 소용없다.
+    CSS·JS도 같다 — style.css를 고쳐도 화면이 그대로여서 "안 고쳐졌다"고
+    한참 엉뚱한 데를 뒤지게 된다. 무거운 것(경계 GeoJSON·지도 라이브러리)은
+    그대로 캐시한다.
     """
     response = await call_next(request)
     path = request.url.path
-    if path.endswith((".html", "/")) or path == "":
+    if (path.endswith((".html", ".css", ".js", "/")) or path == "")             and not path.startswith("/vendor/"):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
     return response

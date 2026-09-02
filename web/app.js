@@ -170,6 +170,15 @@ async function postJSON(path, body) {
   return r.json();
 }
 
+function syncControls() {
+  $$('#hours-seg button').forEach(b =>
+    b.classList.toggle('on', +b.dataset.h === S.hours));
+  $$('#mode-seg button').forEach(b =>
+    b.classList.toggle('on', b.dataset.mode === S.mode));
+  $$('#interests button').forEach(b =>
+    b.classList.toggle('on', S.interests.includes(b.dataset.i)));
+}
+
 async function refresh() {
   setLoading(true);
   try {
@@ -616,6 +625,30 @@ function pushMsg(who, text) {
   return el;
 }
 
+/* 대화로 정한 조건을 화면 상태에 반영한다.
+
+   반영하지 않으면 "비 오는데 북촌에서 3시간"이라 말해 놓고도 왼쪽 폼은
+   '4시간·실시간'을 가리키고, 헤더는 '실외 가능'이라고 적혀 있다.
+   그 상태에서 칩을 하나 누르면 대화 결과가 조용히 사라진다. */
+function adoptIntent(intent, course) {
+  const it = intent || {};
+  const o = (course || {}).origin;
+  let moved = false;
+  if (o && (o.lat !== S.lat || o.lon !== S.lon)) {
+    S.lat = o.lat; S.lon = o.lon; S.precise = false; moved = true;
+  }
+  if (it.hours) S.hours = it.hours;
+  if (it.weather_mode) S.mode = it.weather_mode;
+  if (it.interests && it.interests.length) S.interests = it.interests;
+  syncControls();
+
+  // 주변 개수와 '실외 가능' 배지는 새 위치·새 날씨 기준으로 다시 센다
+  getJSON('/api/candidates', { ...baseParams(), radius_m:2500, limit:200 })
+    .then(c => { S.candidates = c.items; renderHeadStats(c); renderCandidates(); })
+    .catch(() => {});
+  if (moved) refreshWhere();
+}
+
 async function send(text) {
   const msg = (text || $('#chat-input').value).trim();
   if (!msg || S.busy) return;
@@ -644,6 +677,7 @@ async function send(text) {
     if (data.taste) { S.taste = data.taste; saveTaste(); renderTaste(); }
     if (data.course) {
       S.course = data.course;
+      adoptIntent(data.intent, data.course);
       if (data.course.weather) renderWeather(data.course.weather);
       renderPlan(); drawMap();
     }
@@ -730,10 +764,7 @@ function restorePlan(id) {
   S.lat = v.lat; S.lon = v.lon; S.at = v.at; S.hours = v.hours;
   S.mode = v.mode; S.lang = v.lang || 'ko'; S.interests = v.interests || [];
   if (v.at) $('#at').value = v.at;
-  $$('#hours-seg button').forEach(b => b.classList.toggle('on', +b.dataset.h === S.hours));
-  $$('#mode-seg button').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
-  $$('#interests button').forEach(b =>
-    b.classList.toggle('on', S.interests.includes(b.dataset.i)));
+  syncControls();
   $('#vault').hidden = true;
   $('#vault-btn').classList.remove('on');
   refreshWhere();
