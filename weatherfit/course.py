@@ -234,7 +234,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     pool = [(p, r) for p, r in passing(places, when, weather)
             if p.lat and p.lon and is_touristic(p) and p.cid not in skip]
     if not pool:
-        course.notes.append("지금 조건에 맞는 장소를 찾지 못했습니다.")
+        course.notes = _diagnose(when, budget_min, weather, 0, origin)
         return course
 
     def near(cands, radius=area_radius_m):
@@ -274,7 +274,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                 "서울 전역에서 찾았습니다. 이동 시간을 확인해 주세요.")
 
     if anchor_pick is None:
-        course.notes.append("조건에 맞는 후보를 찾지 못했습니다.")
+        course.notes = _diagnose(when, budget_min, weather, len(pool), origin)
         return course
 
     # ---------- 일정 쌓기 ----------
@@ -321,8 +321,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         return True
 
     if not add(anchor_pick, "anchor"):
-        course.notes.append(
-            "남은 시간이 짧아 일정을 만들지 못했습니다. 시간을 늘려 보세요.")
+        course.notes = _diagnose(when, budget_min, weather, len(pool), origin)
         return course
 
     def pick_from(cands, radius=1400.0):
@@ -372,6 +371,11 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     if not weather.outdoor_ok:
         course.notes.append(f"{weather.describe()} — 실외 장소를 후보에서 제외했습니다.")
 
+    # 일정이 비었으면 앞서 붙인 안내는 사실과 다르다. 진단으로 갈아 끼운다.
+    if not course.steps:
+        course.notes = _diagnose(when, budget_min, weather, len(pool), origin)
+        return course
+
     if assumed_count[0]:
         course.notes.append(
             f"{assumed_count[0]}곳은 운영시간 정보가 없어 일반적인 영업시간"
@@ -382,6 +386,41 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         if not s.line:
             s.line = _default_line(s, weather, today)
     return course
+
+
+def _diagnose(when: datetime, budget_min: int, weather: Weather,
+              pool_size: int, origin) -> list[str]:
+    """왜 일정을 못 만들었는지 정확히 말한다.
+
+    "조건에 맞는 곳이 없다"는 답은 사용자가 뭘 바꿔야 할지 알려 주지 않는다.
+    """
+    notes = []
+    # 숙박은 0이라 그냥 min을 쓰면 이 분기가 영영 걸리지 않는다
+    shortest = min([v for v in DWELL.values() if v > 0] or [40])
+    if budget_min < shortest:
+        notes.append(
+            f"{budget_min}분으로는 한 곳도 담기 어렵습니다. "
+            f"한 장소에 보통 {shortest}분 이상 머뭅니다.")
+    elif not (ASSUMED_OPEN[0] <= when.hour < ASSUMED_OPEN[1]) and when.hour < 9:
+        notes.append(
+            f"{when:%H시}에는 문을 연 곳이 거의 없습니다. "
+            "오전 10시 이후로 잡아 보세요.")
+    elif when.hour >= 21:
+        notes.append(
+            f"{when:%H시}에는 대부분 영업이 끝났습니다. "
+            "내일 오전으로 잡아 보세요.")
+    elif pool_size == 0:
+        if not weather.outdoor_ok:
+            notes.append(
+                f"{weather.describe()}에 갈 만한 실내 장소를 근처에서 "
+                "찾지 못했습니다. 위치를 도심 쪽으로 옮겨 보세요.")
+        else:
+            notes.append("이 시각에 문을 연 곳을 찾지 못했습니다. "
+                         "시간대를 바꿔 보세요.")
+    else:
+        notes.append("근처에서 일정을 만들지 못했습니다. "
+                     "시간을 늘리거나 위치를 옮겨 보세요.")
+    return notes
 
 
 def _is_meal_time(t: datetime) -> bool:

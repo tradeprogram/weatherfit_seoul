@@ -252,6 +252,13 @@ def make_course(lat: float, lon: float, mode: str = "auto",
     """
     from .quality import radius_for
     when = parse_when(at)
+
+    # 서울 밖에서 열면 근처에 아무것도 없다. 도심 기준으로 돌리되 그 사실을 알린다.
+    moved = False
+    if not in_seoul(lat, lon):
+        lat, lon = SEOUL_CITY_HALL
+        moved = True
+
     w = resolve_weather(mode, lat, lon, when)
     c = build_course(
         index().places, when, w, origin=(lat, lon),
@@ -263,6 +270,10 @@ def make_course(lat: float, lon: float, mode: str = "auto",
     out = c.to_dict(lang)
     out["engine"] = "rules"
     out["lang"] = lang
+    out["origin"] = {"lat": lat, "lon": lon, "moved_to_seoul": moved}
+    if moved:
+        out["notes"] = ["서울 밖에서 접속하셨습니다. 서울 도심(시청) 기준으로 "
+                        "안내합니다."] + out["notes"]
     if taste is not None and not taste.is_empty:
         out["taste"] = taste.describe()
 
