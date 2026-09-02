@@ -238,20 +238,38 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     # 취향으로 걸러낸 것(영구)과 이번 일정에서만 뺀 것(일회성)을 함께 제외한다
     skip = set(taste.disliked) if taste else set()
     skip |= (exclude or set())
-    # 머물 시간이 없는 곳은 일정이 아니다. 숙박은 반나절 코스의 목적지가
-    # 아니라 자는 곳이라 체류시간이 0인데, 그대로 두면 "16:16 도착 16:16
-    # 출발"짜리 항목이 붙는다. 주변 목록에서는 그대로 보인다.
-    pool = [(p, r) for p, r in passing(places, when, weather)
-            if p.lat and p.lon and is_touristic(p) and p.cid not in skip
-            and dwell_minutes(p) >= MIN_USEFUL_DWELL
-            and not any(a in (p.content.category_path or p.content.category)
-                        for a in avoid)]
+    def build_pool(src):
+        """판정을 통과하고 일정에 올릴 수 있는 후보.
+
+        머물 시간이 없는 곳은 일정이 아니다. 숙박은 반나절 코스의 목적지가
+        아니라 자는 곳이라 체류시간이 0인데, 그대로 두면 "16:16 도착 16:16
+        출발"짜리 항목이 붙는다. 주변 목록에서는 그대로 보인다.
+        """
+        return [(p, r) for p, r in passing(src, when, weather)
+                if p.lat and p.lon and is_touristic(p) and p.cid not in skip
+                and dwell_minutes(p) >= MIN_USEFUL_DWELL
+                and not any(a in (p.content.category_path or p.content.category)
+                            for a in avoid)]
+
+    # 반경 밖은 판정할 이유가 없다. 거리로 먼저 자르면 3,788건 중 수백 건만
+    # 운영시간·날씨 판정을 거친다 — 요청당 40ms가 여기서 빠진다.
+    # 근처가 통째로 비었을 때만 서울 전역을 다시 본다.
+    wide = False
+    if origin:
+        pool = build_pool([p for p in places if p.lat and p.lon
+                           and haversine_m(*origin, p.lat, p.lon)
+                           <= area_radius_m])
+        if not pool:
+            pool, wide = build_pool(places), True
+    else:
+        pool = build_pool(places)
+
     if not pool:
         course.notes = _diagnose(when, budget_min, weather, 0, origin)
         return course
 
     def near(cands, radius=area_radius_m):
-        if not origin:
+        if not origin or not wide:
             return cands
         return [t for t in cands
                 if haversine_m(*origin, t[0].lat, t[0].lon) <= radius]
@@ -266,8 +284,8 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     # 제대로 세운다. "홍대에서 3시간"인데 반경 밖을 앵커로 잡으면
     # 이동에만 40분을 쓰므로, 근처를 먼저 보고 없을 때만 서울 전역으로 넓힌다.
     anchor_pick = None
-    near_pool = near(pool)
-    near_events = near(events)
+    near_pool = [] if wide else pool
+    near_events = [] if wide else events
     if near_pool:
         # 순위(거리·품질·인기·취향)를 먼저 세우고, 곧 끝나는 행사만 앞으로 당긴다.
         # 행사를 무조건 앵커로 두면 두 달 남은 전시가 '역사관광을 보고 싶다'는

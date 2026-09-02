@@ -187,9 +187,30 @@ class Routing:
         """
         if not pairs:
             return []
+        # 이미 다 재 둔 구간이면 스레드를 띄우지 않는다. 풀을 만들고 접는
+        # 것만으로 수십 ms가 드는데, 캐시 조회는 마이크로초짜리다.
+        hit = [self._cached_best(o, d) for o, d in pairs]
+        if all(h is not None for h in hit):
+            return hit
+
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=min(6, len(pairs))) as ex:
             return list(ex.map(lambda p: self.best(p[0], p[1]), pairs))
+
+    def _cached_best(self, o, d) -> dict | None:
+        """캐시만으로 답할 수 있으면 답하고, 아니면 None."""
+        walk = self._cache.get(self._key("walk", o, d))
+        if walk is None:
+            return None
+        if walk.distance_m <= WALKABLE_M:
+            return {"recommended": "walk", "walk": walk.to_dict(),
+                    "transit": None}
+        transit = self._cache.get(self._key("transit", o, d))
+        if transit is None:
+            return None
+        rec = "walk" if walk.minutes <= transit.minutes else "transit"
+        return {"recommended": rec, "walk": walk.to_dict(),
+                "transit": transit.to_dict()}
 
     def _osrm_walk(self, o, d) -> "Leg | None":
         """키 없이 쓰는 실측 도보. 실패하면 None — 호출한 쪽이 추정을 쓴다."""

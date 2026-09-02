@@ -126,17 +126,22 @@ API를 부르면 일정 하나에 수십 번을 묻게 된다. 다 정해진 뒤
 
 | 요청 | p50 | 크기 |
 |---|---:|---:|
-| `GET /` | 2.9ms | 9.4KB |
-| 행정동 GeoJSON | 8.2ms | 1.1MB |
-| `GET /api/where` | 5.1ms | — |
-| `GET /api/candidates` | 29.8ms | 179KB |
-| `POST /api/plan` | 73.6ms | 6.6KB |
-| `POST /api/plan` (구간 실측 포함, 첫 조회) | 0.9s | 6.6KB |
-| `GET /api/stats` | 1.3ms | 캐시 |
-| `POST /api/chat` | 66.9ms | 5.9KB |
+| `GET /` | 5.6ms | 10.4KB |
+| 행정동 GeoJSON | 9.8ms | 1.1MB |
+| `GET /api/where` | 7.7ms | — |
+| `GET /api/candidates` | 46.0ms | 179KB |
+| `POST /api/plan` | 67.3ms | 7.4KB |
+| `POST /api/plan` (구간 실측, 첫 조회) | 0.9s | 7.4KB |
+| `GET /api/stats` | 2.4ms | 캐시 |
+| `POST /api/chat` | 21.2ms | 5.5KB |
 
 정규화·행정동 매칭·인기도를 적재 시점에 한 번만 하기 때문이다. 요청마다
 다시 파싱하던 초기 구현은 판정 한 번에 120ms, `/api/candidates`에 600ms가 들었다.
+
+일정을 짤 때는 **거리로 먼저 자른다.** 반경 밖을 판정할 이유가 없는데도
+3,788건 전부에 운영시간·날씨 판정을 돌리고 있었다. 거리 계산은 한 건에
+마이크로초, 판정은 그보다 훨씬 비싸다. 순서를 바꾸니 일정 요청이 108ms에서
+67ms로, 테스트 스위트 전체가 21초에서 7초로 줄었다.
 
 측정 중에 실제 병목을 하나 찾았다. IPv4에만 바인드하면 브라우저가 `localhost`를
 `::1`로 먼저 풀면서 폴백에 **2,038ms**가 걸린다. 반대로 IPv6에만 바인드하면
