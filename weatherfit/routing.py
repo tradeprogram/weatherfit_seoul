@@ -37,6 +37,8 @@ WALKABLE_M = 900                 # 이보다 가까우면 대중교통이 오히
 # 공개 OSRM 보행 프로파일. 예의상 UA를 밝히고, 캐시로 호출을 줄인다.
 OSRM_FOOT = ("https://routing.openstreetmap.de/routed-foot"
              "/route/v1/foot/{lon1},{lat1};{lon2},{lat2}")
+OSRM_TABLE = "https://routing.openstreetmap.de/routed-foot/table/v1/foot/{coords}"
+TABLE_MAX = 90                   # 공개 서버의 한 번 요청 상한(100)에서 여유를 둔다
 OSRM_UA = {"User-Agent": "weatherfit-seoul/1.0 (tourism course planner; "
                          "https://github.com/tradeprogram/weatherfit_seoul)"}
 OSRM_TIMEOUT = 4                 # 느리면 추정으로 넘어간다. 화면을 붙잡지 않는다
@@ -111,6 +113,7 @@ class Routing:
         self.naver_secret = os.environ.get("NAVER_CLIENT_SECRET", "")
         self._cache: dict[tuple, Leg] = {}
         self._osrm_down = 0.0         # 공개 서버가 막히면 이 시각까지 묻지 않는다
+        self._matrix: dict[tuple, list] = {}   # 거리 매트릭스 캐시
 
     @property
     def providers(self) -> dict[str, str]:
@@ -178,6 +181,47 @@ class Routing:
             except Exception:
                 pass                          # 추정값을 그대로 쓴다
         return self._remember(key, leg)
+
+    def walk_matrix(self, origin: tuple[float, float],
+                    dests: list[tuple[float, float]]) -> list[float | None]:
+        """출발지에서 여러 목적지까지의 **실제 보행 거리(m)**. 못 재면 None.
+
+        후보를 고를 때 직선거리를 쓰면 한강 건너편이나 철길 반대편이
+        '가까운 곳'으로 올라온다. 지도상 900m인데 걸어서 2.4km인 구간이
+        서울에 흔하다. 그렇다고 후보마다 경로를 물으면 수백 번을 부르게
+        되니, OSRM의 table 서비스로 한 번에 받는다.
+        """
+        if self.offline or not dests:
+            return [None] * len(dests)
+        if self._osrm_down and time.time() < self._osrm_down:
+            return [None] * len(dests)
+
+        out: list[float | None] = []
+        for i in range(0, len(dests), TABLE_MAX):
+            chunk = dests[i:i + TABLE_MAX]
+            key = ("table", round(origin[0], 5), round(origin[1], 5),
+                   tuple((round(a, 5), round(b, 5)) for a, b in chunk))
+            if key in self._matrix:
+                out.extend(self._matrix[key])
+                continue
+            coords = ";".join(f"{lon},{lat}" for lat, lon in [origin] + chunk)
+            try:
+                r = requests.get(
+                    OSRM_TABLE.format(coords=coords), headers=OSRM_UA,
+                    params={"sources": "0", "annotations": "distance"},
+                    timeout=OSRM_TIMEOUT + 6,
+                )
+                r.raise_for_status()
+                row = r.json()["distances"][0][1:]
+            except Exception:
+                self._osrm_down = time.time() + OSRM_COOLDOWN
+                return out + [None] * (len(dests) - len(out))
+            row = [float(v) if v is not None else None for v in row]
+            if len(self._matrix) > 400:
+                self._matrix.clear()
+            self._matrix[key] = row
+            out.extend(row)
+        return out
 
     def measure_many(self, pairs: list[tuple]) -> list[dict]:
         """여러 구간을 동시에 실측한다. 순서는 그대로 돌려준다.

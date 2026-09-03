@@ -130,7 +130,8 @@ def popular_note(place: Place) -> str:
     return notes().get(place.cid, "자료 없음 — 충실도로 대신")
 
 
-def explain(place: Place, origin, taste=None, pop: dict | None = None) -> dict:
+def explain(place: Place, origin, taste=None, pop: dict | None = None,
+            dist: dict | None = None) -> dict:
     """이 장소가 왜 뽑혔는지 항목별로 나눠 준다.
 
     "AI가 골랐습니다"는 설명이 아니다. 무엇을 보고 골랐는지 말할 수 있어야
@@ -142,7 +143,10 @@ def explain(place: Place, origin, taste=None, pop: dict | None = None) -> dict:
         from .popularity import scores as _pop
         pop = _pop()
 
-    d = haversine_m(*origin, place.lat, place.lon) if origin else 0.0
+    d = (dist or {}).get(place.cid)
+    measured = d is not None
+    if d is None:
+        d = haversine_m(*origin, place.lat, place.lon) if origin else 0.0
     near = max(0.0, 1.0 - d / 2000.0)
     q = quality(place)
     popular = pop.get(place.cid, 0.0)
@@ -153,7 +157,8 @@ def explain(place: Place, origin, taste=None, pop: dict | None = None) -> dict:
 
     parts = [
         {"key": "near", "label": "가까움", "value": round(near, 2),
-         "weight": W_NEAR, "note": f"{round(d)}m"},
+         "weight": W_NEAR,
+         "note": f"걸어서 {round(d)}m" if measured else f"직선 {round(d)}m"},
         {"key": "quality", "label": "정보 충실", "value": round(q, 2),
          "weight": W_QUALITY, "note": _quality_note(place)},
         {"key": "popular", "label": "알려진 곳", "value": round(popular, 2),
@@ -184,8 +189,12 @@ def _quality_note(place: Place) -> str:
     return " · ".join(got) or "기본 정보만"
 
 
-def rank(cands, origin, taste=None, pop: dict | None = None):
+def rank(cands, origin, taste=None, pop: dict | None = None,
+         dist: dict | None = None):
     """거리 · 품질 · 인기 · 취향을 합쳐 정렬한다.
+
+    dist가 주어지면 그 값(실제 보행 거리)을 쓰고, 없으면 직선거리로 잰다.
+    직선거리는 한강 건너편이나 철길 반대편을 '가까운 곳'으로 올려 보낸다.
 
     거리만 보면 약국이 오고, 품질만 보면 반대편 동네 명소가 온다.
     인기만 보면 유명한 곳만 돌게 되고, 취향만 보면 늘 같은 것만 본다.
@@ -202,7 +211,9 @@ def rank(cands, origin, taste=None, pop: dict | None = None):
     scored = []
     for item in cands:
         p = item[0]
-        d = haversine_m(*origin, p.lat, p.lon) if origin else 0.0
+        d = (dist or {}).get(p.cid)
+        if d is None:
+            d = haversine_m(*origin, p.lat, p.lon) if origin else 0.0
         near = max(0.0, 1.0 - d / 2000.0)
         q = quality(p)
         popular = pop.get(p.cid, 0.0)

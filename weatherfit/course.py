@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from .index import Place
+from .remote import heat_of
 from .quality import Diversity, explain, is_touristic, radius_for, rank
 from .taste import Taste
 from .routing import haversine_m, router
@@ -140,7 +141,8 @@ def _days_left(place: Place, today: date) -> int | None:
     return (end - today).days if end else None
 
 
-def passing(places: list[Place], when: datetime, weather: Weather):
+def passing(places: list[Place], when: datetime, weather: Weather,
+            heat_of=None):
     """일정에 올릴 수 있는 후보. (Place, reason)
 
     '판정 불가'를 일률적으로 버리지 않는다. 어느 단계에서 몰랐는지가 다르다.
@@ -152,7 +154,10 @@ def passing(places: list[Place], when: datetime, weather: Weather):
                  야외였다면 헛걸음이 되기 때문이다.
     """
     for p in places:
-        v, _ = evaluate_place(p, when, weather)
+        # 폭염일 때만 위성 열지도를 본다. 비는 동네를 가리지 않는다.
+        h = heat_of(p.adm_cd) if (heat_of and not weather.outdoor_ok
+                                  and not weather.is_raining) else None
+        v, _ = evaluate_place(p, when, weather, h)
         if v.ok is True:
             yield p, v.reason
         elif v.ok is None and v.stage == "운영":
@@ -245,7 +250,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         아니라 자는 곳이라 체류시간이 0인데, 그대로 두면 "16:16 도착 16:16
         출발"짜리 항목이 붙는다. 주변 목록에서는 그대로 보인다.
         """
-        return [(p, r) for p, r in passing(src, when, weather)
+        return [(p, r) for p, r in passing(src, when, weather, heat_of)
                 if p.lat and p.lon and is_touristic(p) and p.cid not in skip
                 and dwell_minutes(p) >= MIN_USEFUL_DWELL
                 and not any(a in (p.content.category_path or p.content.category)
@@ -267,6 +272,12 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     if not pool:
         course.notes = _diagnose(when, budget_min, weather, 0, origin)
         return course
+
+    # 후보를 직선거리로 고르면 한강 건너편이 '가까운 곳'으로 올라온다.
+    # 지도상 276m인데 걸어서 684m인 구간이 서울 도심에 흔하다. 그렇다고
+    # 후보마다 경로를 물으면 수백 번을 부르게 되니, 직선거리로 먼저 추린
+    # 상위 후보만 한 번의 매트릭스 요청으로 실제 보행 거리를 받는다.
+    dist = _walk_distances(pool, origin, rt) if origin else {}
 
     def near(cands, radius=area_radius_m):
         if not origin or not wide:
@@ -291,7 +302,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         # 행사를 무조건 앵커로 두면 두 달 남은 전시가 '역사관광을 보고 싶다'는
         # 사람의 덕수궁을 밀어낸다. '지금 아니면 놓친다'가 사실일 때만 앞선다.
         ordered = _urgent_first(
-            _prefer(rank(near_pool, origin, taste), interests), today)
+            _prefer(rank(near_pool, origin, taste, dist=dist), interests), today)
         anchor_pick = ordered[0]
         personalized = bool(interests) or (taste is not None and not taste.is_empty)
         if not anchor_pick[0].content.is_short_event:
@@ -305,7 +316,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                 f"{weather.describe()}로 야외 행사가 빠져, 근처 실내 콘텐츠로 시작합니다.")
     else:
         pick_all = _urgent_first(
-            _prefer(rank(pool, origin, taste), interests), today)
+            _prefer(rank(pool, origin, taste, dist=dist), interests), today)
         if pick_all:
             anchor_pick = pick_all[0]
             course.notes.append(
@@ -352,7 +363,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
             ends_today=(_days_left(place, today) == 0
                         and place.content.is_short_event),
         )
-        step.why = explain(place, origin, taste)
+        step.why = explain(place, origin, taste, dist=dist)
         course.steps.append(step)
         used.add(place.cid)
         diversity.add(place)
@@ -371,7 +382,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                    if p.cid not in used
                    and haversine_m(*base, p.lat, p.lon) <= radius
                    and diversity.allows(p)]
-        return rank(near_by, base, taste)
+        return rank(near_by, base, taste, dist=dist if base == origin else None)
 
     # 식사 시간대면 음식을 먼저, 아니면 관심사를 먼저 붙인다.
     # 다만 앵커가 이미 식당이면 밥 먹고 나와 또 밥집으로 가게 된다.
@@ -468,6 +479,72 @@ def _diagnose(when: datetime, budget_min: int, weather: Weather,
         notes.append("근처에서 일정을 만들지 못했습니다. "
                      "시간을 늘리거나 위치를 옮겨 보세요.")
     return notes
+
+
+# 우회율을 재기 위해 실제로 물어보는 표본 수.
+# 공개 OSRM은 목적지가 20개를 넘으면 한 요청에 10초를 물린다(스로틀).
+# 10개까지는 0.9초다. 그래서 조금 물어보고 나머지는 그 비율로 환산한다.
+SAMPLE_N = 10
+# 직선거리 구간. 짧은 구간일수록 우회율이 크다 — 도심 276m가 걸어서 684m다.
+BANDS = (300.0, 700.0, 1500.0, 3000.0, float("inf"))
+
+
+def _walk_distances(pool, origin, rt) -> dict:
+    """후보별 보행 거리(cid → m).
+
+    후보마다 경로를 물으면 수백 번을 부르게 되고, 매트릭스로 한 번에
+    물으면 공개 서버가 10초를 물린다. 그래서 **거리 구간마다 표본을 실측해
+    국소 우회율을 재고, 같은 구간의 나머지에 그 비율을 적용한다.**
+
+    직선 × 1.3이라는 고정 우회율보다 훨씬 낫다. 실제로 도심 276m 구간의
+    우회율은 2.48배이고 12km 구간은 1.17배로, 거리에 따라 크게 다르다.
+    최종 일정에 오른 서넛은 뒤에서 다시 정확히 잰다(_measure_legs).
+    """
+    if not pool or origin is None:
+        return {}
+    straight = {t[0].cid: haversine_m(*origin, t[0].lat, t[0].lon) for t in pool}
+
+    # 구간마다 하나씩, 남는 자리는 가까운 쪽부터 — 가까운 곳이 일정에 오른다
+    by_band: dict[int, list] = {}
+    for t in pool:
+        d = straight[t[0].cid]
+        by_band.setdefault(next(i for i, b in enumerate(BANDS) if d <= b),
+                           []).append(t[0])
+    sample = []
+    for band in sorted(by_band):
+        got = sorted(by_band[band], key=lambda p: straight[p.cid])
+        sample += got[:1] + got[len(got) // 2: len(got) // 2 + 1]
+    rest = sorted((t[0] for t in pool), key=lambda p: straight[p.cid])
+    for p in rest:
+        if len(sample) >= SAMPLE_N:
+            break
+        if p not in sample:
+            sample.append(p)
+    sample = sample[:SAMPLE_N]
+
+    measured = rt.walk_matrix(origin, [(p.lat, p.lon) for p in sample])
+    ratios: dict[int, list[float]] = {}
+    out: dict[str, float] = {}
+    for p, m in zip(sample, measured):
+        if m is None or straight[p.cid] < 30:
+            continue
+        out[p.cid] = m
+        band = next(i for i, b in enumerate(BANDS) if straight[p.cid] <= b)
+        ratios.setdefault(band, []).append(m / straight[p.cid])
+    if not out:
+        return {}                       # 하나도 못 쟀으면 직선으로 돈다
+
+    allr = [r for v in ratios.values() for r in v]
+    fallback = sorted(allr)[len(allr) // 2]
+    for t in pool:
+        p = t[0]
+        if p.cid in out:
+            continue
+        band = next(i for i, b in enumerate(BANDS) if straight[p.cid] <= b)
+        got = sorted(ratios.get(band, []))
+        r = got[len(got) // 2] if got else fallback
+        out[p.cid] = straight[p.cid] * r
+    return out
 
 
 def _measure_legs(course: Course, rt, origin, deadline: datetime) -> None:
