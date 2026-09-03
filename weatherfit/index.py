@@ -25,6 +25,7 @@ class Place:
     env_reason: str
     gu: str = ""
     dong: str = ""
+    adm_cd: str = ""                 # 행정동 코드 — 위성 열지도 조회 키
 
     # 자주 쓰는 것들을 끌어올려 둔다
     lat: float | None = None
@@ -158,11 +159,15 @@ def _attach_dong(idx: Index, dong_gdf) -> None:
         geometry=[Point(p.lon, p.lat) for p in located],
         crs="EPSG:4326",
     )
-    joined = gpd.sjoin(pts, dong_gdf[["gu", "dong", "geometry"]],
-                       how="left", predicate="within")
+    cols = ["gu", "dong", "geometry"]
+    if "adm_cd" in dong_gdf.columns:
+        cols.insert(0, "adm_cd")
+    joined = gpd.sjoin(pts, dong_gdf[cols], how="left", predicate="within")
     for row in joined.itertuples():
         if isinstance(row.gu, str):
             p = idx.by_cid.get(row.cid)
             if p:
                 p.gu, p.dong = row.gu, row.dong
+                code = getattr(row, "adm_cd", None)
+                p.adm_cd = str(code) if isinstance(code, (str, int)) else ""
                 idx.dong_matched += 1

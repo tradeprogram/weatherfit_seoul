@@ -97,12 +97,26 @@ def check_hours(hours: OpeningHours, when: datetime) -> Verdict:
     return Verdict(True, "운영", f"영업 중{conf}")
 
 
-def check_weather(environment: str, weather: Weather) -> Verdict:
+# 폭염일 때, 위성 지표면온도가 이 값보다 낮은 동네의 실외는 살려 둔다.
+# 기상청은 서울에 대푯값 하나를 주지만 실제 지표는 31.4~46.3°C로 벌어진다.
+# 서울숲 한복판과 을지로 아스팔트를 같은 '폭염'으로 묶으면 갈 곳이 없어진다.
+HEAT_SPARE_PCT = 40
+
+
+def check_weather(environment: str, weather: Weather,
+                  heat: dict | None = None) -> Verdict:
     if environment == "indoor":
         return Verdict(True, "날씨", "실내")
     if environment == "outdoor":
         if weather.outdoor_ok:
             return Verdict(True, "날씨", f"실외 가능 — {weather.describe()}")
+        # 비는 어디나 내린다. 더위만 동네를 가린다.
+        if (not weather.is_raining and weather.temp_c >= 33
+                and heat and heat["percentile"] <= HEAT_SPARE_PCT):
+            return Verdict(
+                True, "날씨",
+                f"폭염이지만 지표면온도가 서울 하위 {heat['percentile']}%인 "
+                f"{heat['dong']}({heat['lst_c']}°C) — 실외 유지")
         return Verdict(False, "날씨", f"실외 부적합 — {weather.describe()}")
     # unknown: 날씨가 나쁘면 위험을 감수하지 않는다
     if weather.outdoor_ok:
@@ -120,15 +134,20 @@ def evaluate(item: Content, when: datetime, weather: Weather) -> tuple[Verdict, 
     return _judge(item, hours, environment, env_reason, when, weather)
 
 
-def evaluate_place(place, when: datetime, weather: Weather) -> tuple[Verdict, dict]:
-    """미리 정규화해 둔 Place로 판정한다. 요청 경로에서는 이쪽을 쓴다."""
+def evaluate_place(place, when: datetime, weather: Weather,
+                   heat: dict | None = None) -> tuple[Verdict, dict]:
+    """미리 정규화해 둔 Place로 판정한다. 요청 경로에서는 이쪽을 쓴다.
+
+    heat는 그 장소가 속한 행정동의 위성 지표면온도 요약이다. 폭염일 때
+    동네마다 다르게 판정하기 위한 것으로, 없으면 예전처럼 일률 판정한다.
+    """
     return _judge(place.content, place.hours, place.environment,
-                  place.env_reason, when, weather)
+                  place.env_reason, when, weather, heat)
 
 
 def _judge(item: Content, hours: OpeningHours, environment: str,
            env_reason: str, when: datetime,
-           weather: Weather) -> tuple[Verdict, dict]:
+           weather: Weather, heat: dict | None = None) -> tuple[Verdict, dict]:
     detail = {
         "hours_confidence": hours.confidence,
         "hours_reason": hours.reason,
@@ -140,7 +159,7 @@ def _judge(item: Content, hours: OpeningHours, environment: str,
     if period.ok is not True:
         return period, detail
 
-    weather_v = check_weather(environment, weather)
+    weather_v = check_weather(environment, weather, heat)
     if weather_v.ok is False:
         return weather_v, detail
 
