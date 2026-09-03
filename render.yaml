@@ -1,0 +1,39 @@
+# API 서버 — Render
+#
+# 프런트는 Vercel, API는 여기다. 이 코드를 그대로 올린다.
+#
+# 왜 나눴나: 우리 런타임은 geopandas·shapely·pyproj까지 162MB인데
+# Vercel의 Python 함수 한도는 250MB고, 무엇보다 서버리스는 요청마다
+# 새로 뜬다. 우리는 시작할 때 3,788건을 인덱싱해 두고(약 100ms) 경로·
+# 인기도·구간 캐시를 메모리에 얹어 쓴다. 그 캐시가 성능의 전부라
+# 상주 프로세스가 맞는다.
+#
+# 무료 티어는 15분 놀면 잠든다. 다시 깨는 데 50초쯤 걸리므로,
+# 심사 기간에 데모를 돌리실 거면 유료 인스턴스나 외부 헬스체크로
+# 깨워 두는 편이 낫다.
+
+services:
+  - type: web
+    name: weatherfit-seoul-api
+    runtime: python
+    plan: free
+    region: singapore                 # 서울에서 가장 가깝다
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m weatherfit.server
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # 하나도 없어도 서비스는 완전히 동작한다. 없으면 무엇으로 떨어지는지
+      # /api/health에 그대로 표시된다. 값은 Render 대시보드에서 넣는다.
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: KMA_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: VISITSEOUL_API_KEY
+        sync: false
+      - key: ODSAY_API_KEY
+        sync: false
+      - key: TMAP_APP_KEY
+        sync: false

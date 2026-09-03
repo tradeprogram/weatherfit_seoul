@@ -4,8 +4,11 @@ __pycache__/
 .venv/
 venv/
 
-# 수집 원본은 재현 가능하므로 저장소에 넣지 않는다 (python -m weatherfit.collect --all)
-data/raw/
+# 수집 원본(*.jsonl)은 재현 가능하므로 넣지 않는다.
+#   python -m weatherfit.collect --all
+# 다만 압축본(*.jsonl.gz)은 넣는다 — 19.2MB가 5.0MB로 줄고, 그래야
+# 클론하거나 배포한 서버가 콘텐츠를 가진 채로 뜬다.
+data/raw/*.jsonl
 data/report.md
 
 # 행정동 경계(web/data/seoul_dong.geojson)는 저장소에 포함한다.

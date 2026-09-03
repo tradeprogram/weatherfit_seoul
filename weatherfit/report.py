@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import sys
 from collections import Counter
 from datetime import datetime
@@ -25,13 +26,31 @@ OUT = ROOT / "data" / "report.md"
 
 
 def load(lang: str = "ko") -> list[Content]:
-    """어권별 수집 파일을 읽는다. 한국어는 {분류}.jsonl, 나머지는 {분류}.{lang}.jsonl"""
-    pattern = "*.jsonl" if lang == "ko" else f"*.{lang}.jsonl"
-    items: list[Content] = []
-    for path in sorted(RAW.glob(pattern)):
-        if lang == "ko" and path.name.count(".") > 1:
+    """어권별 수집 파일을 읽는다. 한국어는 {분류}.jsonl, 나머지는 {분류}.{lang}.jsonl
+
+    `.jsonl.gz`도 읽는다. 배포본에는 압축본만 넣는다 — 원본 19.2MB가
+    5.0MB로 줄어 저장소에 넣을 만해지고, 그래야 서버가 뜰 때 콘텐츠가
+    있다. 같은 분류에 둘 다 있으면 압축 안 된 쪽을 쓴다(새로 수집한 것).
+    """
+    import gzip
+
+    suffix = ".jsonl" if lang == "ko" else f".{lang}.jsonl"
+    found: dict[str, pathlib.Path] = {}
+    for path in sorted(RAW.glob("*.jsonl")) + sorted(RAW.glob("*.jsonl.gz")):
+        name = path.name[:-3] if path.name.endswith(".gz") else path.name
+        if not name.endswith(suffix):
+            continue
+        stem = name[: -len(suffix)]
+        if lang == "ko" and "." in stem:
             continue                      # 다른 어권 파일은 건너뛴다
-        with path.open(encoding="utf-8") as f:
+        # 압축본이 먼저 잡혀도 원본이 있으면 원본을 쓴다
+        if stem not in found or not path.name.endswith(".gz"):
+            found[stem] = path
+
+    items: list[Content] = []
+    for path in sorted(found.values()):
+        opener = (gzip.open if path.name.endswith(".gz") else open)
+        with opener(path, "rt", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:

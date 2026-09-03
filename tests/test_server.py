@@ -424,3 +424,48 @@ class TestAgentReplan:
             "message": "비 온대요", "lat": 37.5445, "lon": 127.0557,
             "at": AT, "intent": first["intent"], "course": first["course"]}).json()
         assert "지켰어요" in again["answer"] or "경험" in again["answer"]
+
+
+class TestDeploy:
+    """배포본이 콘텐츠를 가진 채로 뜨는지."""
+
+    def test_압축본만_있어도_읽는다(self):
+        """배포 저장소에는 *.jsonl.gz만 들어간다. 원본이 없다고
+        콘텐츠 0건으로 뜨면 서버가 올라와도 아무 쓸모가 없다."""
+        import gzip
+        from weatherfit import report
+
+        assert list(report.RAW.glob("*.jsonl.gz")), "압축본이 저장소에 없다"
+        # 원본을 감춰도 같은 건수가 나와야 한다
+        raws = list(report.RAW.glob("*.jsonl"))
+        hidden = [p.rename(p.with_suffix(".jsonl.hidden")) for p in raws]
+        try:
+            assert len(report.load("ko")) > 3000
+        finally:
+            for p in hidden:
+                p.rename(p.with_suffix("").with_suffix(".jsonl"))
+
+    def test_배포_설정이_같은_주소를_가리킨다(self):
+        """Render 서비스 이름을 바꾸면 Vercel rewrite도 같이 고쳐야 한다."""
+        import json
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        render = (root / "render.yaml").read_text(encoding="utf-8")
+        name = next(l.split("name:")[1].strip() for l in render.splitlines()
+                    if l.strip().startswith("name:"))
+        vercel = json.loads((root / "vercel.json").read_text(encoding="utf-8"))
+        dest = vercel["rewrites"][0]["destination"]
+        assert f"{name}.onrender.com" in dest, f"{name} ≠ {dest}"
+
+    def test_정적_파일이_출력_디렉터리에_있다(self):
+        import json
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        out = json.loads((root / "vercel.json").read_text(encoding="utf-8"))
+        web = root / out["outputDirectory"]
+        for f in ("index.html", "app.js", "style.css", "sw.js",
+                  "manifest.webmanifest", "data/seoul_dong.geojson",
+                  "vendor/leaflet.js"):
+            assert (web / f).exists(), f

@@ -34,7 +34,11 @@ python -m weatherfit.popularity verify        # 오매칭 걸러내기 (약 1분
 python -m weatherfit.server                   # http://127.0.0.1:8020
 ```
 
-행정동 경계(`web/data/seoul_dong.geojson`)는 저장소에 포함돼 있어 바로 지도가 뜬다.
+행정동 경계와 수집본(`data/raw/*.jsonl.gz`, 5.0MB)이 저장소에 들어 있어
+클론하고 서버만 띄우면 바로 돈다. 수집·인기도·위성 단계는 근거를 재현하고
+싶을 때만 돌리면 된다.
+
+배포는 [DEPLOY.md](DEPLOY.md) — 프런트 Vercel, API Render.
 
 ## 무엇으로 고르는가
 
@@ -349,7 +353,7 @@ web/
   style.css      밝은 낮의 서울 — 글라스모피즘
   sw.js          로밍 중에도 앱이 열리게. 판정 결과만은 캐시하지 않는다
   vendor/        Leaflet (CDN 의존을 없애기 위해 동봉)
-tests/           252개. 실제로 났던 회귀를 그대로 박아 둔다
+tests/           255개. 실제로 났던 회귀를 그대로 박아 둔다
 ```
 
 자세한 설계 판단은 [ARCHITECTURE.md](ARCHITECTURE.md).
