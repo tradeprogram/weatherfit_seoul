@@ -13,7 +13,7 @@
      /api/*                               네트워크만. 오래된 판정은 위험하다.
        "지금 열려 있는가"에 어제 답을 주면 이 앱의 존재 이유가 사라진다.
 */
-const VERSION = 'weatherfit-v1';
+const VERSION = 'weatherfit-v2';
 const SHELL = `${VERSION}-shell`;
 const TILES = `${VERSION}-tiles`;
 const TILE_MAX = 300;
@@ -26,6 +26,8 @@ const PRECACHE = [
   'vendor/leaflet.css',
   'vendor/leaflet.js',
   'manifest.webmanifest',
+  'img/logo.png',
+  'img/favicon.png',
   'icons/icon-192.png',
   'icons/icon-512.png',
 ];

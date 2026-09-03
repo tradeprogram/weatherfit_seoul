@@ -323,9 +323,11 @@ class TestChatIntentDetail:
 
 class TestOffline:
     def test_서비스_워커를_서빙한다(self, client):
+        import re
         r = client.get("/sw.js")
         assert r.status_code == 200
-        assert "weatherfit-v1" in r.text
+        # 캐시 버전은 배포마다 올린다. 값을 고정하면 올릴 때마다 빨개진다.
+        assert re.search(r"const VERSION = 'weatherfit-v\d+'", r.text)
 
     def test_판정_결과는_캐시하지_않는다(self, client):
         """어제의 '열려 있음'을 오늘 답으로 주면 이 앱의 존재 이유가 사라진다."""

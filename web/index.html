@@ -9,12 +9,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="img/favicon.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="웨더핏 서울">
 <meta name="description" content="오늘 날씨에, 지금 열려 있는 곳만 골라 짜는 서울 반나절 코스">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=55">
+<link rel="stylesheet" href="style.css?v=59">
 </head>
 <body>
 
@@ -22,15 +23,16 @@
 <div id="map" role="application" aria-label="서울 지도. 일정과 주변 장소가 표시됩니다"></div>
 <div class="sky" aria-hidden="true"></div>
 
-<header class="topbar glass">
-  <div class="brand">
-    <span class="mark" aria-hidden="true">☀</span>
-    <div>
-      <h1>웨더핏 서울</h1>
+<header class="topbar">
+  <div class="bar bar-left glass">
+    <img class="logo" src="img/logo.png" alt="웨더핏 서울" width="537" height="180">
+    <div class="brand-txt">
+      <h1 class="sr-only">웨더핏 서울</h1>
       <p>오늘 날씨에, 지금 열려 있는 곳만</p>
     </div>
   </div>
 
+  <div class="bar bar-right glass">
   <button class="where" id="where-chip" title="위치 다시 찾기">
     <span class="pin">📍</span>
     <span class="where-body">
@@ -55,6 +57,7 @@
     <button data-lang="zh-CN">中文</button>
   </div>
   <button class="icon-btn" id="help-btn" title="이용 안내" aria-label="이용 안내">?</button>
+  </div>
 </header>
 
 <aside class="panel panel-left glass">
@@ -279,6 +282,6 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=55"></script>
+<script src="app.js?v=59"></script>
 </body>
 </html>
