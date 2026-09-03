@@ -767,3 +767,30 @@ body.lst-on .leaflet-layer.basemap{filter:saturate(.12) brightness(1.16) contras
   animation:caret .8s step-end infinite}
 @keyframes caret{50%{opacity:0}}
 @media (prefers-reduced-motion:reduce){ .msg.typing-on::after{display:none} }
+
+/* ═════════ 이동 요약 — 걷기와 대중교통 ═════════
+   구간마다 '도보 7분'이 붙어 있어도 하루 전체에서 얼마나 걷는지는
+   세어 봐야 안다. 4시간에 40분을 걷는 일정과 12분만 걷는 일정은
+   완전히 다른 하루다. 실측인지 추정인지도 여기서 한 번에 말한다. */
+.move-card{margin:0 0 12px;padding:11px 13px 9px;border-radius:13px;
+  background:rgba(255,255,255,.72);border:1px solid var(--glass-edge)}
+.move-card:empty{display:none}
+.move-head{font-size:10.5px;color:var(--ink-3);font-weight:600;
+  letter-spacing:.02em;margin-bottom:7px}
+.move-row{display:flex;align-items:center;gap:10px;padding:6px 0}
+.move-row + .move-row{border-top:1px solid var(--line)}
+.move-ico{width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;
+  border-radius:9px;font-size:15px;background:rgba(125,146,166,.12)}
+.move-walk .move-ico{background:rgba(34,160,107,.14)}
+.move-transit .move-ico{background:rgba(43,143,216,.14)}
+.move-body{flex:1;min-width:0;line-height:1.35}
+.move-body b{display:block;font-size:12.5px;font-weight:600}
+.move-min{font-variant-numeric:tabular-nums}
+.move-walk .move-min{color:var(--food)}
+.move-transit .move-min{color:var(--primary)}
+.move-body small{display:block;font-size:10.5px;color:var(--ink-3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.move-tag{flex:0 0 auto;font-size:9.5px;font-weight:600;padding:2px 7px;
+  border-radius:999px}
+.move-tag.exact{background:rgba(34,160,107,.14);color:#1a7a52}
+.move-tag.est{background:rgba(240,138,52,.16);color:#b56a1e}

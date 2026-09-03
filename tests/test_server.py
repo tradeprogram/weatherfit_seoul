@@ -471,3 +471,32 @@ class TestDeploy:
                   "manifest.webmanifest", "data/seoul_dong.geojson",
                   "vendor/leaflet.js"):
             assert (web / f).exists(), f
+
+
+class TestMoveSummary:
+    """이동을 도보와 대중교통으로 갈라 보여 줄 수 있는가 (응답 형태)."""
+
+    def test_구간마다_수단과_실측여부가_실린다(self, client):
+        d = client.post("/api/plan", json={**SEOUL, "hours": 6, "at": AT,
+                                           "mode": "clear"}).json()
+        legs = [s.get("travel") for s in d["steps"] if s.get("travel")]
+        assert legs
+        for tv in legs:
+            rec = tv["recommended"]
+            assert rec in ("walk", "transit")
+            leg = tv[rec]
+            assert leg["minutes"] > 0
+            assert "exact" in leg and "provider" in leg
+            assert "distance_m" in leg
+
+    def test_이동시간_합이_구간의_합과_맞는다(self, client):
+        """카드에 적히는 '이동 46분'이 구간 합과 다르면 둘 중 하나가 거짓이다."""
+        d = client.post("/api/plan", json={**SEOUL, "hours": 6, "at": AT,
+                                           "mode": "clear"}).json()
+        total = 0
+        for s in d["steps"]:
+            tv = s.get("travel") or {}
+            rec = tv.get("recommended")
+            if rec:
+                total += (tv.get(rec) or {}).get("minutes", 0)
+        assert total == d["travel_min"]

@@ -432,6 +432,55 @@ function travelRow(step) {
       <em>${leg.exact ? '실측' : '추정'}</em></span></li>`;
 }
 
+/* 이동을 도보와 대중교통으로 갈라 보여 준다.
+
+   구간마다 '도보 7분'이 붙어 있긴 하지만, 일정 전체에서 얼마나 걷고
+   얼마나 타는지는 세어 봐야 안다. 4시간 중 40분을 걷는 일정과 12분만
+   걷는 일정은 완전히 다른 하루다.
+
+   실측인지 추정인지도 여기서 한 번에 말한다. 구간마다 붙은 배지는
+   스크롤해야 보이고, 섞여 있으면 더더욱 눈에 안 띈다. */
+function renderMoveCard(c) {
+  const box = $('#move-card');
+  if (!c || !c.steps.length) { box.innerHTML = ''; return; }
+
+  const sum = { walk:{ n:0, min:0, m:0, exact:0, how:'' },
+                transit:{ n:0, min:0, m:0, exact:0, how:'', lines:[] } };
+  c.steps.forEach(s => {
+    const leg = legOf(s);
+    if (!leg || !leg.minutes) return;
+    const a = sum[leg.mode];
+    if (!a) return;
+    a.n += 1; a.min += leg.minutes; a.m += leg.distance_m || 0;
+    if (leg.exact) { a.exact += 1; a.how = leg.provider; }
+    if (leg.mode === 'transit' && leg.summary) a.lines.push(leg.summary);
+  });
+
+  const HOW = { tmap:'TMAP 보행경로', osrm:'OSM 도로망', odsay:'ODsay 대중교통' };
+  const row = (mode, icon, label) => {
+    const a = sum[mode];
+    if (!a.n) return '';
+    const measured = a.exact === a.n;
+    const km = a.m >= 1000 ? `${(a.m / 1000).toFixed(1)}km` : `${a.m}m`;
+    const detail = mode === 'transit' && a.lines.length
+      ? a.lines.slice(0, 2).join(' · ') : (a.m ? km : '');
+    return `<div class="move-row move-${mode}">
+      <span class="move-ico" aria-hidden="true">${icon}</span>
+      <div class="move-body">
+        <b>${label} <span class="move-min">${fmtMin(a.min)}</span></b>
+        <small>${a.n}구간${detail ? ' · ' + esc(detail) : ''}</small>
+      </div>
+      <span class="move-tag ${measured ? 'exact' : 'est'}"
+            title="${esc(measured ? (HOW[a.how] || '실제 경로 API') : '직선거리 기반 추정')}"
+        >${measured ? '실측' : a.exact ? `${a.exact}/${a.n} 실측` : '추정'}</span>
+    </div>`;
+  };
+
+  const rows = row('walk', '🚶', '걷기') + row('transit', '🚇', '대중교통');
+  if (!rows) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="move-head">이동 ${fmtMin(c.travel_min)}</div>${rows}`;
+}
+
 function renderPlan() {
   const c = S.course;
   const head = $('#plan-head'), tl = $('#timeline');
@@ -441,6 +490,7 @@ function renderPlan() {
     head.innerHTML = '';
     tl.innerHTML = '';
     backup.innerHTML = '';
+    renderMoveCard(null);
     notes.innerHTML = `<div>${esc((c && c.notes && c.notes[0])
       || '조건에 맞는 일정을 만들지 못했습니다. 시간을 늘리거나 위치를 바꿔 보세요.')}</div>`;
     return;
@@ -456,6 +506,8 @@ function renderPlan() {
     <div class="budget"><span style="width:${
       Math.min(100, c.total_min / c.budget_min * 100).toFixed(0)}%"></span></div>
     <div class="plan-sub">${fmtMin(c.budget_min)} 중 ${fmtMin(c.total_min)} 사용</div>`;
+
+  renderMoveCard(c);
 
   tl.innerHTML = c.steps.map((s, i) => `
     ${travelRow(s)}
