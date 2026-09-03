@@ -849,9 +849,12 @@ async function send(text) {
   try {
     const r = await fetch('/api/agent', {
       method:'POST', headers:{ 'Content-Type':'application/json' },
+      // 지금 짜 둔 일정을 함께 보낸다. 그래야 "비 온대요"에 처음부터
+      // 다시 짜지 않고 원래 하려던 경험을 지키며 고칠 수 있다.
       body:JSON.stringify({ message:msg, messages:S.history,
                             lat:S.lat, lon:S.lon, at:S.at,
-                            intent:S.intent, taste:S.taste, lang:S.lang }),
+                            intent:S.intent, taste:S.taste,
+                            styles:S.styles, course:S.course, lang:S.lang }),
     });
     const data = await r.json();
     typing.remove();

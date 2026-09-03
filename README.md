@@ -254,7 +254,7 @@ SM/YG/JYP엔터테인먼트 · 종묘 · 창덕궁 · 숭례문 · 국립중앙�
 | `NAVER_CLIENT_ID`/`SECRET` | 자동차 시간을 직선거리로 추정 |
 | `KAKAO_REST_KEY` | 카카오 등재 확인을 건너뜀 |
 | `GOOGLE_PLACES_KEY` | 평점 없이 위키 조회수만 |
-| `ANTHROPIC_API_KEY` | 규칙 기반 의도 파악·템플릿 답변 |
+| `ANTHROPIC_API_KEY` 또는 `GEMINI_API_KEY` | 규칙 기반 의도 파악·템플릿 답변 |
 
 각 구간의 소요시간에는 **실측인지 추정인지**가 함께 표시된다.
 
@@ -349,7 +349,7 @@ web/
   style.css      밝은 낮의 서울 — 글라스모피즘
   sw.js          로밍 중에도 앱이 열리게. 판정 결과만은 캐시하지 않는다
   vendor/        Leaflet (CDN 의존을 없애기 위해 동봉)
-tests/           249개. 실제로 났던 회귀를 그대로 박아 둔다
+tests/           252개. 실제로 났던 회귀를 그대로 박아 둔다
 ```
 
 자세한 설계 판단은 [ARCHITECTURE.md](ARCHITECTURE.md).

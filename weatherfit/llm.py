@@ -6,9 +6,11 @@
   tag_environment   실내/실외/반실내 + 우천 가능 여부
   explain_course    선택한 코스에 "왜 지금인지" 한 줄씩
 
-ANTHROPIC_API_KEY가 없으면 호출하지 않고 `weatherfit.normalize`의 규칙 결과를
-그대로 쓴다. 즉 키가 없어도 파이프라인 전체가 돈다 — 정확도만 낮아진다.
-어느 쪽이 쓰였는지는 결과의 `engine` 필드로 항상 구분된다.
+두 제공자를 받는다. `ANTHROPIC_API_KEY`가 있으면 Claude를, 없고
+`GEMINI_API_KEY`가 있으면 Gemini를 쓴다. 어느 쪽도 없으면 호출하지 않고
+`weatherfit.normalize`의 규칙 결과를 그대로 쓴다. 즉 키가 없어도 파이프라인
+전체가 돈다 — 정확도만 낮아진다. 어느 쪽이 쓰였는지는 결과의 `engine`
+필드와 `/api/health`로 항상 구분된다.
 """
 from __future__ import annotations
 
@@ -20,7 +22,10 @@ from typing import Any
 import requests
 
 API_URL = "https://api.anthropic.com/v1/messages"
+GEMINI_URL = ("https://generativelanguage.googleapis.com/v1beta"
+              "/models/{model}:generateContent")
 DEFAULT_MODEL = os.environ.get("WEATHERFIT_MODEL", "claude-sonnet-5")
+GEMINI_MODEL = os.environ.get("WEATHERFIT_GEMINI_MODEL", "gemini-3.6-flash")
 
 _HOURS_SCHEMA = """{
   "always_open": false,
@@ -61,6 +66,30 @@ JSON만 출력하라: {{"environment": "...", "rain_ok": true, "reason": "20자 
 태그: {tags}"""
 
 
+def load_env(path: str = ".env") -> None:
+    """.env를 읽어 환경변수에 채운다. 이미 있는 값은 덮지 않는다.
+
+    python-dotenv를 의존성에 더하지 않은 것은 이 한 가지만 필요해서다.
+    실제로 넣은 키가 안 읽혀서 '키가 없다'고 표시되면 한참을 헤맨다.
+    """
+    from pathlib import Path
+
+    f = Path(__file__).resolve().parent.parent / path
+    if not f.exists():
+        return
+    for line in f.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k, v = k.strip(), v.strip().strip('"').strip("'")
+        if v and not os.environ.get(k):
+            os.environ[k] = v
+
+
+load_env()
+
+
 @dataclass
 class LLMResult:
     data: dict[str, Any]
@@ -72,14 +101,23 @@ class LLM:
     def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL,
                  timeout: int = 60):
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self.gemini_key = os.environ.get("GEMINI_API_KEY", "")
         self.model = model
         self.timeout = timeout
 
     @property
+    def provider(self) -> str:
+        if self.api_key:
+            return "anthropic"
+        return "gemini" if self.gemini_key else "none"
+
+    @property
     def available(self) -> bool:
-        return bool(self.api_key)
+        return self.provider != "none"
 
     def _call(self, prompt: str, max_tokens: int = 1024) -> str:
+        if self.provider == "gemini":
+            return self._call_gemini(prompt, max_tokens)
         r = requests.post(
             API_URL,
             headers={
@@ -96,6 +134,38 @@ class LLM:
         )
         r.raise_for_status()
         return r.json()["content"][0]["text"]
+
+    def _call_gemini(self, prompt: str, max_tokens: int) -> str:
+        """Gemini 호출.
+
+        두 가지를 조심해야 한다. 사고 과정이 담긴 part가 섞여 오므로
+        `thought` 표시가 붙은 것은 버린다 — 그대로 이으면 답변에
+        "Wait, let's look" 같은 혼잣말이 사용자에게 나간다. 그리고 사고에도
+        토큰이 들어가므로 예산을 넉넉히 준다. 모자라면 본문이 잘린 채
+        생각만 남는다.
+        """
+        r = requests.post(
+            GEMINI_URL.format(model=GEMINI_MODEL),
+            headers={"x-goog-api-key": self.gemini_key,
+                     "content-type": "application/json"},
+            json={"contents": [{"parts": [{"text": prompt}]}],
+                  "generationConfig": {
+                      "maxOutputTokens": max(max_tokens, 1024) * 4,
+                      "temperature": 0.4,
+                      "thinkingConfig": {"thinkingLevel": "low"}}},
+            timeout=self.timeout,
+        )
+        r.raise_for_status()
+        cand = (r.json().get("candidates") or [{}])[0]
+        parts = (cand.get("content") or {}).get("parts") or []
+        text = "".join(p.get("text", "") for p in parts
+                       if not p.get("thought")).strip()
+        if not text:
+            raise ValueError(f"빈 응답: {cand.get('finishReason', '')}")
+        if cand.get("finishReason") == "MAX_TOKENS":
+            # 문장 중간에서 끊긴 답을 내보내느니 규칙 답변이 낫다.
+            raise ValueError("길이 제한에 걸려 답이 잘렸다")
+        return text
 
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:

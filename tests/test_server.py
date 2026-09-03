@@ -391,3 +391,36 @@ class TestAgent:
         d = self.ask(client, "폭염인데 3시간", at="2026-08-05T14:00")
         assert any(t["tool"] == "read_thermal" for t in d["tool_trace"])
         assert d["heat"] and "lst_c" in d["heat"]
+
+
+class TestAgentReplan:
+    """이미 일정이 있는데 "비 온대요"면 처음부터 다시 짜지 않는다."""
+
+    def plan(self, client):
+        return client.post("/api/agent", json={
+            "message": "성수에서 4시간", "lat": 37.5445, "lon": 127.0557,
+            "at": AT}).json()
+
+    def test_기존_일정을_고친다(self, client):
+        first = self.plan(client)
+        assert first["course"]["steps"]
+        again = client.post("/api/agent", json={
+            "message": "갑자기 비 온대요", "lat": 37.5445, "lon": 127.0557,
+            "at": AT, "intent": first["intent"], "taste": first["taste"],
+            "course": first["course"]}).json()
+        assert any(t["tool"] == "replan_course" for t in again["tool_trace"])
+        assert again["course"]["replanned"] is True
+        assert 0 <= again["course"]["experience_kept"] <= 1
+
+    def test_일정이_없으면_그냥_짠다(self, client):
+        d = client.post("/api/agent", json={
+            "message": "갑자기 비 온대요", "lat": 37.5445, "lon": 127.0557,
+            "at": AT}).json()
+        assert not any(t["tool"] == "replan_course" for t in d["tool_trace"])
+
+    def test_바꾼_내용을_근거로_보여_준다(self, client):
+        first = self.plan(client)
+        again = client.post("/api/agent", json={
+            "message": "비 온대요", "lat": 37.5445, "lon": 127.0557,
+            "at": AT, "intent": first["intent"], "course": first["course"]}).json()
+        assert "지켰어요" in again["answer"] or "경험" in again["answer"]

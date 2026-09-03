@@ -130,6 +130,7 @@ def health():
         "language_coverage": {l: round(n / max(len(idx.places), 1), 3)
                               for l, n in sorted(idx.translated.items())},
         "translated": idx.translated,
+        "llm_provider": LLM().provider,
         "keys": {
             "visitseoul_api": bool(os.environ.get("VISITSEOUL_API_KEY")),
             "kma": bool(os.environ.get("KMA_API_KEY")),
@@ -486,6 +487,33 @@ def _shift_start(at: str | None, hour: int | None) -> str | None:
 
 # ----------------------------------------------------------------- 에이전트
 
+def _agent_replan(prior_cids, lat, lon, at, hours, mode, taste,
+                  styles, done_until=None, lang="ko") -> dict | None:
+    """에이전트용 재편성 도구.
+
+    화면이 들고 있던 일정을 cid로 되살려 '원래 하려던 것'으로 삼는다.
+    그래야 "비 온대요"에 처음부터 다시 짜지 않고 그 일정을 고칠 수 있다.
+    """
+    from .course import (Course, Step, experience_kept, replan)
+
+    idx = index()
+    olds = [idx.by_cid[c] for c in prior_cids if c in idx.by_cid]
+    if not olds:
+        return None
+    when = parse_when(at)
+    before = Course(start=when, budget_min=int(hours * 60))
+    before.steps = [Step(place=p, role="spot", reason="") for p in olds]
+
+    after = replan(
+        before, idx.places, when,
+        resolve_weather(mode, lat, lon, when),
+        origin=(lat, lon), budget_min=int(hours * 60),
+        taste=taste, profile=TrendProfile.from_styles(styles),
+        keep_before=parse_when(done_until) if done_until else None)
+    return {"after": after.to_dict(lang),
+            "experience_kept": experience_kept(before, after)}
+
+
 def _agent_deps() -> dict:
     """에이전트가 쓸 도구 묶음. 서버가 가진 것을 넘겨준다."""
     from .remote import heat_of
@@ -496,6 +524,7 @@ def _agent_deps() -> dict:
         "shift_start": _shift_start,
         "make_course": make_course,
         "thermal": heat_of,
+        "replan": _agent_replan,
     }
 
 
@@ -507,6 +536,9 @@ class AgentIn(BaseModel):
     at: str | None = None
     intent: dict | None = None
     taste: dict | None = None
+    styles: list[str] = []
+    course: dict | None = None         # 화면이 들고 있는 현재 일정
+    done_until: str | None = None      # 이 시각까지는 이미 다녀왔다
     lang: str = "ko"
 
 
@@ -525,7 +557,8 @@ def agent_turn(body: AgentIn):
 
     payload = {"message": msg, "lat": body.lat, "lon": body.lon,
                "at": body.at, "intent": body.intent, "taste": body.taste,
-               "lang": body.lang}
+               "styles": body.styles, "course": body.course,
+               "done_until": body.done_until, "lang": body.lang}
     deps = _agent_deps()
     got = run_agent(payload, deps)
     answer, engine = compose(payload, got, deps["llm"])
