@@ -15,7 +15,7 @@ const S = {
   mode:'auto', hours:4, at:null,
   course:null, candidates:[], stats:null,
   catFilter:null, selected:null, showAll:false,
-  mapMode:'plain', thermal:null, dongGeo:null,
+  mapMode:'plain', thermal:null, dongGeo:null, styles:[],
   history:[], intent:null, busy:false,
   interests:[], taste:null, lang:'ko', langsReady:['ko'], exclude:[],
 };
@@ -274,6 +274,18 @@ async function postJSON(path, body) {
   return r.json();
 }
 
+const LS_STYLES = 'weatherfit.styles';
+
+function saveStyles() {
+  try { localStorage.setItem(LS_STYLES, JSON.stringify(S.styles)); }
+  catch (e) { /* 무시 */ }
+}
+
+function loadStyles() {
+  try { S.styles = JSON.parse(localStorage.getItem(LS_STYLES) || '[]'); }
+  catch (e) { S.styles = []; }
+}
+
 function syncControls() {
   $$('#hours-seg button').forEach(b =>
     b.classList.toggle('on', +b.dataset.h === S.hours));
@@ -281,6 +293,8 @@ function syncControls() {
     b.classList.toggle('on', b.dataset.mode === S.mode));
   $$('#interests button').forEach(b =>
     b.classList.toggle('on', S.interests.includes(b.dataset.i)));
+  $$('#styles button').forEach(b =>
+    b.classList.toggle('on', S.styles.includes(b.dataset.s)));
 }
 
 async function refresh() {
@@ -289,7 +303,8 @@ async function refresh() {
     const [course, cands] = await Promise.all([
       postJSON('/api/plan', { lat:S.lat, lon:S.lon, mode:S.mode, at:S.at,
                               hours:S.hours, interests:S.interests,
-                              taste:S.taste, lang:S.lang, exclude:S.exclude }),
+                              styles:S.styles, taste:S.taste,
+                              lang:S.lang, exclude:S.exclude }),
       getJSON('/api/candidates', { ...baseParams(), radius_m:2500, limit:200 }),
     ]);
     S.course = course;
@@ -1110,6 +1125,14 @@ function bindUI() {
 
   $$('#tabs button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 
+  $$('#styles button').forEach(b => b.onclick = e => {
+    const on = e.currentTarget.classList.toggle('on');
+    e.currentTarget.setAttribute('aria-pressed', on ? 'true' : 'false');
+    const k = e.currentTarget.dataset.s;
+    S.styles = on ? [...S.styles, k] : S.styles.filter(x => x !== k);
+    saveStyles();
+    refresh();
+  });
   $$('.seg-map button').forEach(b => b.onclick = () => setMapMode(b.dataset.map));
   $('#ai-form').onsubmit = e => { e.preventDefault(); send(); };
   $('#ai-fab').onclick = () => aiOpen($('#ai-panel').hidden);
@@ -1189,6 +1212,8 @@ function init() {
   bindUI();
   renderVault();
   syncLanguages();
+  loadStyles();
+  syncControls();
   if (readUrlState()) {
     applyUrlOptions();
     $('#geo-overlay').hidden = true;

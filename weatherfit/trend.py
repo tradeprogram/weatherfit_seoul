@@ -262,3 +262,95 @@ def service_axes(course: dict, taste=None) -> dict:
     common = sum(1 for p in pops if p > 0.6) / len(pops)
     return {"tailored_smart": tailored,
             "your_seoul": round(1.0 - common, 2)}
+
+
+# ------------------------------------------------------------------ 사용자 쪽
+
+# 여행 스타일. VITALITY 축을 사람이 고를 수 있는 말로 묶은 것이다.
+#
+# 국적으로 취향을 추정하지 않는다. 트렌드 문서에 "일본은 로컬 감성" 같은
+# 권역 분석이 있고 리서치 초안도 그걸 Prior로 쓰자고 했지만, 같은 나라
+# 사람도 취향은 제각각이고 국적으로 사람을 분류하는 화면은 좋게 읽히지
+# 않는다. 문서 스스로도 "국가값만으로 결정하지 말라"고 적어 두었다.
+# 대신 본인이 고르게 한다 — 어차피 더 정확하다.
+STYLES = {
+    "local":    {"label": "동네 살아보기", "emoji": "🏘",
+                 "axes": {"immersive_local": 1.0, "living_emotion": 0.5},
+                 "interests": {"local_life": 1.0, "k_food": 0.6}},
+    "content":  {"label": "공연·전시 몰입", "emoji": "🎭",
+                 "axes": {"vibrant_content": 1.0, "living_emotion": 0.3},
+                 "interests": {"k_culture": 1.0}},
+    "wellness": {"label": "쉬러 왔어요", "emoji": "🌿",
+                 "axes": {"ambient_wellness": 1.0, "living_emotion": 0.6},
+                 "interests": {"local_life": 0.3}},
+    "emotion":  {"label": "분위기 좋은 곳", "emoji": "🌙",
+                 "axes": {"living_emotion": 1.0, "ambient_wellness": 0.4},
+                 "interests": {"k_food": 0.5}},
+    "easy":     {"label": "편하고 안전하게", "emoji": "🧭",
+                 "axes": {"trusted_global": 1.0, "vibrant_content": 0.3},
+                 "interests": {}},
+}
+
+
+@dataclass
+class TrendProfile:
+    """사용자의 트렌드 좌표. 화면이 들고 다니고 서버는 저장하지 않는다."""
+    axes: dict = field(default_factory=dict)
+    interests: dict = field(default_factory=dict)
+    styles: list = field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return not any(self.axes.values()) and not any(self.interests.values())
+
+    def to_dict(self) -> dict:
+        return {"axes": self.axes, "interests": self.interests,
+                "styles": self.styles}
+
+    @classmethod
+    def from_dict(cls, d: dict | None) -> "TrendProfile":
+        d = d or {}
+        return cls(axes=dict(d.get("axes") or {}),
+                   interests=dict(d.get("interests") or {}),
+                   styles=list(d.get("styles") or []))
+
+    @classmethod
+    def from_styles(cls, styles) -> "TrendProfile":
+        p = cls(styles=[s for s in (styles or []) if s in STYLES])
+        for s in p.styles:
+            for a, v in STYLES[s]["axes"].items():
+                p.axes[a] = max(p.axes.get(a, 0.0), v)
+            for a, v in STYLES[s]["interests"].items():
+                p.interests[a] = max(p.interests.get(a, 0.0), v)
+        return p
+
+    def describe(self) -> str:
+        return " · ".join(STYLES[s]["label"] for s in self.styles)
+
+
+def trend_fit(profile: TrendProfile, vector: TrendVector) -> float | None:
+    """프로필과 장소의 맞음. 0~1. 프로필이 비었으면 None.
+
+    코사인이 아니라 **가중 평균**을 쓴다. 코사인은 사용자가 축 하나만
+    골랐을 때 그 축을 조금이라도 가진 모든 장소를 똑같이 1.0으로 만든다.
+    "로컬 몰입 0.2"와 "로컬 몰입 0.95"가 같은 점수가 되면 곤란하다.
+
+    모르는 축(None)은 계산에서 빼고 분모도 줄인다. 0으로 치면 '녹지가
+    없다'로 읽혀 회복형 사용자에게 부당하게 낮은 점수가 된다.
+    """
+    if profile.is_empty:
+        return None
+    num = den = 0.0
+    for axis, want in profile.axes.items():
+        got = vector.axes.get(axis)
+        if want <= 0 or got is None:
+            continue
+        num += want * got
+        den += want
+    for axis, want in profile.interests.items():
+        got = vector.interests.get(axis)
+        if want <= 0 or got is None:
+            continue
+        num += want * got
+        den += want
+    return round(num / den, 3) if den else None

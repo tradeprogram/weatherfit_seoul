@@ -729,3 +729,8 @@ body.lst-on .leaflet-layer.basemap{filter:saturate(.12) brightness(1.16) contras
 }
 .ramp-brk{margin:0;font-size:9.5px;color:var(--ink-3);line-height:1.4}
 .ramp-brk b{font-weight:600;color:var(--ink-2)}
+
+/* 여행 스타일 칩 — 관심사와 구분되게 살짝 다른 결로 */
+.styles button{border-style:dashed}
+.styles button.on{border-style:solid;
+  background:linear-gradient(135deg,#3f9fdd,#2b7fc4);border-color:transparent}

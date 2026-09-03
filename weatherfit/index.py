@@ -26,6 +26,7 @@ class Place:
     gu: str = ""
     dong: str = ""
     adm_cd: str = ""                 # 행정동 코드 — 위성 열지도 조회 키
+    trend: object = None             # 트렌드 벡터 (적재 때 1회)
 
     # 자주 쓰는 것들을 끌어올려 둔다
     lat: float | None = None
@@ -115,6 +116,7 @@ def build_index(items: list[Content], dong_gdf=None,
         _attach_translations(idx, translations)
     if dong_gdf is not None:
         _attach_dong(idx, dong_gdf)
+    _attach_trend(idx)
 
     idx.build_ms = int((time.time() - t0) * 1000)
     return idx
@@ -140,6 +142,20 @@ def _attach_translations(idx: Index, translations: dict[str, list[Content]]) -> 
             }
             matched += 1
         idx.translated[lang] = matched
+
+
+def _attach_trend(idx: Index) -> None:
+    """트렌드 벡터를 적재 시점에 한 번만 만든다.
+
+    행정동이 붙은 뒤라야 위성 식생지수를 쓸 수 있으므로 순서가 중요하다.
+    요청마다 다시 태깅하면 3,788건을 매번 훑게 된다.
+    """
+    from .remote import table
+    from .trend import tag_place
+
+    green = {k: v.get("ndvi") for k, v in (table().get("dong") or {}).items()}
+    for p in idx.places:
+        p.trend = tag_place(p, ndvi=green.get(p.adm_cd))
 
 
 def _attach_dong(idx: Index, dong_gdf) -> None:

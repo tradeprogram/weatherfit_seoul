@@ -26,6 +26,7 @@ from .chat import LANDMARKS, Intent, compose_reply, parse_intent
 from .popularity import scores as popularity_scores
 from .taste import PARTY_AVOID, PARTY_TAGS, Taste, mood_interests
 from .agent import compose, run_agent
+from .trend import STYLES, TrendProfile, service_axes
 from .course import build_course
 from .index import Index, build_index
 from .llm import LLM
@@ -256,7 +257,7 @@ def make_course(lat: float, lon: float, mode: str = "auto",
                 radius_m: int = 4000, interests: str = "",
                 explain: bool = False, taste: Taste | None = None,
                 lang: str = "ko", exclude: list[str] | None = None,
-                avoid: tuple[str, ...] = ()) -> dict:
+                avoid: tuple[str, ...] = (), profile=None) -> dict:
     """코스 생성 본체.
 
     엔드포인트를 파이썬 함수로 직접 부르면 FastAPI의 Query 기본값이
@@ -278,6 +279,7 @@ def make_course(lat: float, lon: float, mode: str = "auto",
         area_radius_m=float(radius_m) if radius_m != 4000 else radius_for(hours),
         interests=[x for x in interests.split(",") if x],
         taste=taste, exclude=set(exclude or []), avoid=avoid,
+        profile=profile,
     )
     out = c.to_dict(lang)
     out["engine"] = "rules"
@@ -288,6 +290,9 @@ def make_course(lat: float, lon: float, mode: str = "auto",
                         "안내합니다."] + out["notes"]
     if taste is not None and not taste.is_empty:
         out["taste"] = taste.describe()
+    if profile is not None and not profile.is_empty:
+        out["style"] = profile.describe()
+        out["service_axes"] = service_axes(out, taste)
 
     if explain and c.steps:
         llm = LLM()
@@ -318,6 +323,7 @@ class PlanIn(BaseModel):
     hours: float = 4.0
     interests: list[str] = []
     taste: dict | None = None          # 화면이 들고 다니는 취향 프로필
+    styles: list[str] = []             # 여행 스타일 (VITALITY)
     lang: str = "ko"
     exclude: list[str] = []            # 이번 일정에서만 빼 달라고 한 곳
 
@@ -333,10 +339,18 @@ def plan(body: PlanIn):
     if body.interests:
         taste.declare(body.interests, weight=1.5)
     out = make_course(body.lat, body.lon, body.mode, body.at, body.hours,
+                      profile=TrendProfile.from_styles(body.styles),
                       radius_m=4000, interests=",".join(body.interests),
                       taste=taste, lang=body.lang, exclude=body.exclude)
     out["taste_applied"] = not taste.is_empty
     return out
+
+
+@app.get("/api/styles")
+def styles():
+    """고를 수 있는 여행 스타일. VITALITY 축을 사람 말로 묶은 것이다."""
+    return {"styles": [{"key": k, "label": v["label"], "emoji": v["emoji"]}
+                       for k, v in STYLES.items()]}
 
 
 @app.get("/api/thermal")
@@ -345,6 +359,55 @@ def thermal_map():
     from .remote import table
     t = table()
     return {"meta": t.get("meta", {}), "dong": t.get("dong", {})}
+
+
+class ReplanIn(BaseModel):
+    lat: float = SEOUL_CITY_HALL[0]
+    lon: float = SEOUL_CITY_HALL[1]
+    at: str | None = None
+    hours: float = 4.0
+    mode: str = "rain"                 # 바뀐 날씨
+    done_until: str | None = None      # 이 시각까지는 이미 다녀왔다
+    interests: list[str] = []
+    styles: list[str] = []
+    taste: dict | None = None
+    lang: str = "ko"
+
+
+@app.post("/api/replan")
+def replan_course(body: ReplanIn):
+    """날씨가 바뀌었을 때 원래 하려던 경험을 지키며 남은 일정을 고친다.
+
+    "비 오면 실내로" 가 아니라 "비 오는데, 원래 하려던 게 로컬 감성이었으니
+    실내인데 로컬 감성인 곳으로". 얼마나 지켰는지는 숫자로 함께 돌려준다.
+    """
+    from .course import build_course, experience_kept, replan
+
+    when = parse_when(body.at)
+    taste = Taste.from_dict(body.taste)
+    if body.interests:
+        taste.declare(body.interests, weight=1.5)
+    profile = TrendProfile.from_styles(body.styles)
+    idx = index()
+
+    before = build_course(
+        idx.places, when, resolve_weather("clear", body.lat, body.lon, when),
+        origin=(body.lat, body.lon), budget_min=int(body.hours * 60),
+        interests=body.interests, taste=taste, profile=profile)
+
+    after = replan(
+        before, idx.places, when,
+        resolve_weather(body.mode, body.lat, body.lon, when),
+        origin=(body.lat, body.lon), budget_min=int(body.hours * 60),
+        taste=taste, profile=profile,
+        keep_before=parse_when(body.done_until) if body.done_until else None)
+
+    return {
+        "before": before.to_dict(body.lang),
+        "after": after.to_dict(body.lang),
+        "experience_kept": experience_kept(before, after),
+        "style": profile.describe(),
+    }
 
 
 @app.get("/api/routing")

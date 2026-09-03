@@ -114,10 +114,11 @@ class Diversity:
 
 
 # 점수 배분. 합이 1이 되게 유지한다.
-W_NEAR = 0.30      # 가까운가
-W_QUALITY = 0.25   # 콘텐츠가 충실한가
-W_POPULAR = 0.25   # 실제로 알려진 곳인가 (위키 조회수 등)
-W_TASTE = 0.20     # 이 사용자의 취향인가
+W_NEAR = 0.28      # 가까운가
+W_QUALITY = 0.22   # 콘텐츠가 충실한가
+W_POPULAR = 0.20   # 실제로 알려진 곳인가 (위키 조회수 등)
+W_TASTE = 0.15     # 이 사용자의 취향인가 (좋아요·관심없음으로 학습)
+W_TREND = 0.15     # 이 사람이 말한 여행 스타일에 맞는가 (VITALITY 5축)
 
 
 def popular_note(place: Place) -> str:
@@ -131,7 +132,7 @@ def popular_note(place: Place) -> str:
 
 
 def explain(place: Place, origin, taste=None, pop: dict | None = None,
-            dist: dict | None = None) -> dict:
+            dist: dict | None = None, profile=None) -> dict:
     """이 장소가 왜 뽑혔는지 항목별로 나눠 준다.
 
     "AI가 골랐습니다"는 설명이 아니다. 무엇을 보고 골랐는지 말할 수 있어야
@@ -169,8 +170,26 @@ def explain(place: Place, origin, taste=None, pop: dict | None = None,
         parts.append({"key": "taste", "label": "취향 일치",
                       "value": round(aff, 2), "weight": W_TASTE,
                       "note": taste.describe()})
+    fit = _trend_fit(place, profile)
+    if fit is not None:
+        parts.append({"key": "trend", "label": "여행 스타일",
+                      "value": fit, "weight": W_TREND,
+                      "note": _trend_note(place, profile)})
     total = sum(p["value"] * p["weight"] for p in parts)
     return {"score": round(total, 3), "parts": parts}
+
+
+def _trend_note(place, profile) -> str:
+    """어느 축이 맞아서 뽑혔는지 한 줄로."""
+    from .trend import AXIS_LABEL
+    best, top = "", 0.0
+    for axis, want in (profile.axes or {}).items():
+        got = place.trend.axes.get(axis)
+        if got is not None and want * got > top:
+            best, top = axis, want * got
+    if not best:
+        return profile.describe()
+    return f"{AXIS_LABEL[best]} — {place.trend.basis.get(best, '')}"
 
 
 def _quality_note(place: Place) -> str:
@@ -189,8 +208,18 @@ def _quality_note(place: Place) -> str:
     return " · ".join(got) or "기본 정보만"
 
 
+def _trend_fit(place, profile) -> float | None:
+    """이 장소가 사용자가 말한 여행 스타일에 맞는가. 스타일이 없으면 None."""
+    if profile is None or getattr(profile, "is_empty", True):
+        return None
+    if getattr(place, "trend", None) is None:
+        return None
+    from .trend import trend_fit
+    return trend_fit(profile, place.trend)
+
+
 def rank(cands, origin, taste=None, pop: dict | None = None,
-         dist: dict | None = None):
+         dist: dict | None = None, profile=None):
     """거리 · 품질 · 인기 · 취향을 합쳐 정렬한다.
 
     dist가 주어지면 그 값(실제 보행 거리)을 쓰고, 없으면 직선거리로 잰다.
@@ -227,6 +256,9 @@ def rank(cands, origin, taste=None, pop: dict | None = None,
                  + popular * W_POPULAR + max(0.0, aff) * W_TASTE)
         if aff < 0:
             score += aff * W_TASTE        # 싫어하는 쪽은 감점
+        fit = _trend_fit(p, profile)
+        if fit is not None:
+            score += fit * W_TREND
         scored.append((score, item))
     scored.sort(key=lambda t: -t[0])
     return [t[1] for t in scored]

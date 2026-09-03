@@ -234,7 +234,8 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                  max_stops: int = 5,
                  taste: Taste | None = None,
                  exclude: set[str] | None = None,
-                 avoid: tuple[str, ...] = ()) -> Course:
+                 avoid: tuple[str, ...] = (),
+                 profile=None) -> Course:
     """출발 시각과 남은 시간으로 실제 일정을 짠다."""
     course = Course(weather=weather, start=when, budget_min=budget_min)
     today = when.date()
@@ -301,8 +302,9 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         # 순위(거리·품질·인기·취향)를 먼저 세우고, 곧 끝나는 행사만 앞으로 당긴다.
         # 행사를 무조건 앵커로 두면 두 달 남은 전시가 '역사관광을 보고 싶다'는
         # 사람의 덕수궁을 밀어낸다. '지금 아니면 놓친다'가 사실일 때만 앞선다.
-        ordered = _urgent_first(
-            _prefer(rank(near_pool, origin, taste, dist=dist), interests), today)
+        ordered = _urgent_first(_style_first(
+            _prefer(rank(near_pool, origin, taste, dist=dist, profile=profile),
+                    interests), profile), today)
         anchor_pick = ordered[0]
         personalized = bool(interests) or (taste is not None and not taste.is_empty)
         if not anchor_pick[0].content.is_short_event:
@@ -316,7 +318,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                 f"{weather.describe()}로 야외 행사가 빠져, 근처 실내 콘텐츠로 시작합니다.")
     else:
         pick_all = _urgent_first(
-            _prefer(rank(pool, origin, taste, dist=dist), interests), today)
+            _prefer(rank(pool, origin, taste, dist=dist, profile=profile), interests), today)
         if pick_all:
             anchor_pick = pick_all[0]
             course.notes.append(
@@ -363,7 +365,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
             ends_today=(_days_left(place, today) == 0
                         and place.content.is_short_event),
         )
-        step.why = explain(place, origin, taste, dist=dist)
+        step.why = explain(place, origin, taste, dist=dist, profile=profile)
         course.steps.append(step)
         used.add(place.cid)
         diversity.add(place)
@@ -382,7 +384,8 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                    if p.cid not in used
                    and haversine_m(*base, p.lat, p.lon) <= radius
                    and diversity.allows(p)]
-        return rank(near_by, base, taste, dist=dist if base == origin else None)
+        return rank(near_by, base, taste,
+                    dist=dist if base == origin else None, profile=profile)
 
     # 식사 시간대면 음식을 먼저, 아니면 관심사를 먼저 붙인다.
     # 다만 앵커가 이미 식당이면 밥 먹고 나와 또 밥집으로 가게 된다.
@@ -397,7 +400,8 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         added = False
         for kind in order:
             cands = pick_from(foods if kind == "food"
-                              else _prefer(pool, interests))
+                              else _style_first(_prefer(pool, interests),
+                                                profile))
             for pick in cands[:8]:
                 if add(pick, kind if kind == "food" else "spot"):
                     added = True
@@ -611,6 +615,33 @@ def _urgent_first(cands, today: date):
                                  key=lambda it: (-urgency(it[1]), it[0]))]
 
 
+# 스타일을 골랐을 때 '이 스타일에 맞다'고 볼 최소 적합도.
+# 전수 분포에서 상위 25%가 대략 여기서 갈린다.
+STYLE_MIN = 0.45
+
+
+def _style_first(cands, profile):
+    """말한 여행 스타일에 맞는 곳을 앞으로 당긴다.
+
+    가중치 15%만으로는 거리 28%·품질 22%·인기 20%를 못 넘는다. 그래서
+    '동네 살아보기'를 골라도 코스가 그대로였다. 관심사에 쓰던 방식과
+    같게, 확실히 맞는 것만 순위를 뛰어넘어 앞으로 온다.
+
+    임계를 두는 이유는 조금 맞는 것까지 당기면 순위가 통째로 뒤집혀
+    거리와 품질이 무의미해지기 때문이다.
+    """
+    if profile is None or getattr(profile, "is_empty", True):
+        return cands
+    from .trend import trend_fit
+
+    def fit(t):
+        v = getattr(t[0], "trend", None)
+        return (trend_fit(profile, v) or 0.0) if v else 0.0
+
+    hit = [t for t in cands if fit(t) >= STYLE_MIN]
+    return hit + [t for t in cands if fit(t) < STYLE_MIN]
+
+
 def _prefer(cands, interests: list[str] | None):
     """관심사로 말한 분류를 앞으로 당긴다."""
     if not interests:
@@ -671,3 +702,153 @@ def _closing_soon(step: Step) -> str | None:
 # 하위 호환 — 기존 호출부가 쓰던 이름
 def walk_minutes(meters: float) -> int:
     return max(1, round(meters / 67.0))
+
+
+# ---------------------------------------------------------------- 경험 보존 재편성
+
+# 대체 후보로 인정할 최소 유사도. 이보다 낮으면 '비슷한 곳'이 아니다.
+SIMILAR_MIN = 0.55
+
+
+def _experience(place) -> dict:
+    """이 장소가 주는 경험의 좌표. 트렌드 벡터에서 아는 축만 꺼낸다."""
+    v = getattr(place, "trend", None)
+    if v is None:
+        return {}
+    got = {k: x for k, x in v.axes.items() if x is not None}
+    got.update({k: x for k, x in v.interests.items() if x is not None})
+    return got
+
+
+def experience_similarity(a, b) -> float:
+    """두 장소가 얼마나 비슷한 경험인가. 0~1.
+
+    코사인을 쓴다. 여기서는 '어느 축이 센가'의 방향이 중요하고 세기는
+    덜 중요하기 때문이다. 야경 카페와 루프탑 바는 세기가 달라도 같은
+    방향이고, 그게 대체 가능성이다.
+    """
+    x, y = _experience(a), _experience(b)
+    keys = set(x) & set(y)
+    if not keys:
+        return 0.0
+    dot = sum(x[k] * y[k] for k in keys)
+    nx = math.sqrt(sum(x[k] ** 2 for k in keys))
+    ny = math.sqrt(sum(y[k] ** 2 for k in keys))
+    return round(dot / (nx * ny), 3) if nx and ny else 0.0
+
+
+def replan(course: Course, places: list[Place], when: datetime,
+           weather: Weather, origin, budget_min: int,
+           taste: Taste | None = None, profile=None,
+           keep_before: datetime | None = None) -> Course:
+    """날씨가 바뀌었을 때, **원래 하려던 경험을 지키면서** 일정을 고친다.
+
+    지금까지의 재편성은 "비 오면 실외를 빼고 남은 것 중 점수 높은 곳"이었다.
+    그러면 '로컬 골목 산책 + 감성 카페'를 원했던 사람이 백화점을 받는다.
+    날씨 때문에 장소가 바뀌는 건 어쩔 수 없지만 **경험까지 바뀔 이유는 없다.**
+
+    그래서 빠지는 자리마다 원래 그 자리에 있던 곳과 경험 좌표가 가장
+    비슷한 곳을 찾는다. 서울숲(로컬+회복+감성)이 빠지면 성수동 실내
+    전시(로컬+감성)로 가지, 가까운 대형마트로 가지 않는다.
+
+    keep_before 이전 일정은 이미 다녀온 것으로 보고 건드리지 않는다.
+    """
+    kept = [s for s in course.steps
+            if keep_before and s.depart and s.depart <= keep_before]
+    dropped = [s for s in course.steps if s not in kept]
+    if not dropped:
+        return course
+
+    cursor = kept[-1].depart if kept else when
+    here = (kept[-1].place.lat, kept[-1].place.lon) if kept else origin
+    used = {s.place.cid for s in kept}
+
+    fresh = build_course(
+        places, cursor, weather, origin=here,
+        budget_min=max(0, budget_min - int((cursor - when).total_seconds() // 60)),
+        taste=taste, profile=profile, exclude=used,
+    )
+
+    # 빠진 자리마다 '가장 비슷한 경험'으로 다시 채운다.
+    # 살아남은 곳은 먼저 자기 자신에 짝지어야 한다 — 그러지 않으면
+    # "섬유기획전 → 무신사 테라스"처럼 그대로 남은 곳이 바뀐 것처럼 적힌다.
+    out = Course(weather=weather, start=course.start, budget_min=budget_min)
+    out.steps = list(kept)
+    notes: list[str] = []
+    pool = list(fresh.steps)
+    survived = {s.place.cid: s for s in pool}
+
+    pending = []
+    for old in dropped:
+        same = survived.get(old.place.cid)
+        if same is not None and same in pool:
+            out.steps.append(same)
+            pool.remove(same)
+        else:
+            pending.append(old)
+
+    for old in pending:
+        if not pool:
+            notes.append(f"{old.place.title}{_josa(old.place.title)} 대신할 곳을 "
+                         "찾지 못해 일정에서 뺐습니다.")
+            continue
+        pool.sort(key=lambda s: -experience_similarity(old.place, s.place))
+        best = pool[0]
+        sim = experience_similarity(old.place, best.place)
+        if sim < SIMILAR_MIN:
+            notes.append(f"{old.place.title}{_josa(old.place.title)} 대신할 만큼 "
+                         f"비슷한 곳이 없어 {best.place.title}(으)로 바꿉니다.")
+        else:
+            notes.append(f"{old.place.title} → {best.place.title} "
+                         f"(경험 유사도 {sim:.0%})")
+        out.steps.append(best)
+        pool.remove(best)
+
+    out.steps.sort(key=lambda s: s.arrive or course.start)
+    if len(out.steps) < len(course.steps):
+        notes.append(f"{len(course.steps) - len(out.steps)}곳은 대체할 곳을 "
+                     "찾지 못했습니다.")
+
+    out.backup = fresh.backup
+    out.notes = ([f"{weather.describe()}로 남은 일정을 다시 짰습니다. "
+                  "원래 하려던 경험에 가장 가까운 곳으로 바꿉니다."]
+                 + notes + fresh.notes)
+    return out
+
+
+def _josa(word: str) -> str:
+    from .agent import josa
+    return josa(word, "을")
+
+
+def experience_kept(before: Course, after: Course) -> float:
+    """재편성이 원래 경험을 얼마나 지켰는가. 0~1.
+
+    바꿨다고 말만 하고 실제로 지켰는지 재지 않으면 그건 주장일 뿐이다.
+    """
+    old, new = before.steps, after.steps
+    if not old or not new:
+        return 0.0
+    # 자리 순서로 짝지으면 순서만 바뀐 일정이 부당하게 낮게 나온다.
+    # 그렇다고 '새 일정 아무 곳과의 최대'로 재면 한 곳이 여러 자리를 덮어
+    # 무엇을 해도 90%가 넘는다. 한 곳은 한 자리만 맡는 일대일로 짝짓는다.
+    remain = list(new)
+    got = []
+    for s in old:
+        if not remain:
+            got.append(0.0)          # 대체하지 못한 자리는 0이다
+            continue
+        best = max(remain, key=lambda t: experience_similarity(s.place, t.place))
+        got.append(experience_similarity(s.place, best.place))
+        remain.remove(best)
+    return round(sum(got) / len(got), 3) if got else 0.0
+
+
+def weather_only(course: Course, places: list[Place], when: datetime,
+                 weather: Weather, origin, budget_min: int) -> Course:
+    """비교용 기준선 — 경험을 보지 않고 날씨만 보고 다시 짜는 옛 방식.
+
+    "우리가 낫다"고 말하려면 무엇보다 나은지를 같은 조건에서 재야 한다.
+    """
+    return build_course(places, when, weather, origin=origin,
+                        budget_min=budget_min)

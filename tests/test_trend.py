@@ -148,3 +148,31 @@ class TestServiceAxes:
         popularity._scores = {"A": 0.9, "B": 0.1}
         got = service_axes({"steps": [{"cid": "A"}, {"cid": "B"}]})
         assert got["your_seoul"] >= 0.4
+
+
+class TestTrendFit:
+    def test_스타일이_없으면_None(self):
+        from weatherfit.trend import TrendProfile, trend_fit
+        v = tag_place(place("아무개"))
+        assert trend_fit(TrendProfile(), v) is None
+
+    def test_강하게_맞는_곳이_더_높다(self):
+        from weatherfit.trend import TrendProfile, trend_fit
+        prof = TrendProfile.from_styles(["local"])
+        strong = tag_place(place("거안", tags=["오래가게"]))
+        weak = tag_place(place("아무개 편의점", category="쇼핑",
+                               path="쇼핑 > 편의점"))
+        assert trend_fit(prof, strong) > trend_fit(prof, weak)
+
+    def test_코사인이_아니라_가중평균이다(self):
+        """코사인은 축 하나만 고른 사용자에게 '조금 가진' 곳과 '많이 가진'
+        곳을 똑같이 1.0으로 준다. 그러면 순위가 서지 않는다."""
+        from weatherfit.trend import TrendProfile, trend_fit
+        prof = TrendProfile.from_styles(["local"])
+        a = tag_place(place("노포", tags=["오래가게"]))
+        b = tag_place(place("동네 식당", category="음식", path="음식 > 한식"))
+        assert trend_fit(prof, a) > trend_fit(prof, b) > 0
+
+    def test_스타일을_말로_설명한다(self):
+        from weatherfit.trend import TrendProfile
+        assert "동네" in TrendProfile.from_styles(["local"]).describe()
