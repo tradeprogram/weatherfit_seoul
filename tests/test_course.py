@@ -261,3 +261,28 @@ class TestExperiencePreserving:
         out = replan(c, places, NOON, RAIN, origin=(37.5665, 126.9780),
                      budget_min=300)
         assert any("다시 짰습니다" in n for n in out.notes)
+
+
+class TestAnchorFallback:
+    def test_1순위가_막혀도_포기하지_않는다(self):
+        """19:50에 시청에서 456곳을 갈 수 있는데도 빈 일정이 나왔다.
+        1순위 덕수궁이 20시에 닫힌다는 이유 하나로 나머지를 버린 것이다.
+        문 닫은 곳 하나가 도시 전체를 닫지는 않는다."""
+        closed = place("곧 닫는 명소", use_time="매일 09:00~20:00",
+                       desc="설명" * 300, tags=list("abcdefgh"),
+                       lat=near(0)[0], lon=near(0)[1], cid="KO0")
+        open_ = place("열려 있는 곳", use_time="매일 09:00~23:00",
+                      lat=near(1)[0], lon=near(1)[1], cid="KO1")
+        c = build_course([closed, open_], datetime(2026, 9, 3, 19, 50), CLEAR,
+                         origin=(37.5665, 126.9780), budget_min=240)
+        assert c.steps
+        assert c.steps[0].place.cid == "KO1"
+
+    def test_정말_다_닫혔으면_이유를_말한다(self):
+        allclosed = [place(f"닫은 곳{i}", use_time="매일 09:00~18:00",
+                           lat=near(i)[0], lon=near(i)[1], cid=f"KO{i}")
+                     for i in range(5)]
+        c = build_course(allclosed, datetime(2026, 9, 3, 22, 0), CLEAR,
+                         origin=(37.5665, 126.9780), budget_min=240)
+        assert c.steps == []
+        assert c.notes

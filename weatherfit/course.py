@@ -171,6 +171,8 @@ ASSUMED_OPEN = (10, 20)
 
 
 MIN_USEFUL_DWELL = 20          # 이보다 짧게 머물 바엔 다른 곳을 간다
+# 앵커 후보를 몇 개까지 시도할까. 문 닫은 곳이 연달아 나올 수 있다.
+ANCHOR_TRIES = 12
 
 # 이 안쪽으로 끝나는 행사만 '지금 아니면 놓친다'로 본다.
 # 축제·행사의 99.2%가 이미 끝난 데이터라, 살아 있는 행사는 그 자체로 귀하다.
@@ -295,6 +297,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     # 첫 장소가 나머지 일정의 위치를 결정한다. 그래서 여기만은 순위를
     # 제대로 세운다. "홍대에서 3시간"인데 반경 밖을 앵커로 잡으면
     # 이동에만 40분을 쓰므로, 근처를 먼저 보고 없을 때만 서울 전역으로 넓힌다.
+    ordered_anchors: list = []          # 1순위가 막히면 다음을 시도한다
     anchor_pick = None
     near_pool = [] if wide else pool
     near_events = [] if wide else events
@@ -305,6 +308,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         ordered = _urgent_first(_style_first(
             _prefer(rank(near_pool, origin, taste, dist=dist, profile=profile),
                     interests), profile), today)
+        ordered_anchors = ordered
         anchor_pick = ordered[0]
         personalized = bool(interests) or (taste is not None and not taste.is_empty)
         if not anchor_pick[0].content.is_short_event:
@@ -319,6 +323,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     else:
         pick_all = _urgent_first(
             _prefer(rank(pool, origin, taste, dist=dist, profile=profile), interests), today)
+        ordered_anchors = pick_all
         if pick_all:
             anchor_pick = pick_all[0]
             course.notes.append(
@@ -373,7 +378,16 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         here = dest
         return True
 
-    if not add(anchor_pick, "anchor"):
+    # 1순위가 막혔다고 일정 전체를 포기하지 않는다.
+    #
+    # 19:50에 시청에서 456곳을 갈 수 있는데도 빈 일정이 나왔다. 1순위
+    # 덕수궁이 20시에 닫혀 못 들어간다는 이유 하나로 나머지를 통째로
+    # 버린 것이다. 문 닫은 곳 하나가 도시 전체를 닫지는 않는다.
+    for cand in (ordered_anchors or [anchor_pick])[:ANCHOR_TRIES]:
+        if add(cand, "anchor"):
+            anchor_pick = cand
+            break
+    else:
         course.notes = _diagnose(when, budget_min, weather, len(pool), origin)
         return course
 

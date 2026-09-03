@@ -34,7 +34,11 @@
   --mono:ui-monospace,"SFMono-Regular",Consolas,monospace;
 
   --pad:16px;
-  --top-h:64px;
+  /* 아래 요소들이 상단 바를 피해 내려오는 기준.
+     두 덩어리의 높이가 다르므로 '더 큰 쪽'(로고 카드)에 맞춘다.
+     여기를 짧은 쪽에 맞추면 로고 카드가 패널과 지도 버튼을 덮는다. */
+  --top-h:92px;
+  --bar-h:64px;               /* 상태 묶음(오른쪽)의 높이 */
   --left-w:352px;
   --right-w:344px;
 }
@@ -80,11 +84,14 @@ button{cursor:pointer;border:0;background:none}
   gap:12px;pointer-events:none;
 }
 .bar{display:flex;align-items:center;gap:16px;padding:0 16px;
-  height:var(--top-h);pointer-events:auto}
-/* 로고 쪽은 로고 크기에 맞춰 스스로 높이를 잡는다 */
-.bar-left{gap:14px;padding:8px 20px 8px 14px;height:auto}
+  height:var(--bar-h);pointer-events:auto}
+.bar-left{gap:14px;padding:0 20px 0 14px;height:var(--top-h)}
 .bar-right{gap:16px}
+/* 부제는 한 줄로 둔다. 두 줄이 되면 로고 카드가 세로로 부풀어
+   아래 패널을 다시 밀어낸다. 좁으면 아예 숨기는 편이 낫다. */
 .brand-txt{min-width:0}
+.brand-txt p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:1240px){ .brand-txt{display:none} }
 /* 로고는 워드마크까지 들어 있는 한 덩어리라 그대로 쓴다.
    제목을 옆에 또 적으면 '웨더핏 서울'이 두 번 나온다. h1은 남기되
    화면에서만 숨긴다 — 스크린리더와 검색엔진에는 여전히 필요하다. */
