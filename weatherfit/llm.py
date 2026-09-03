@@ -74,30 +74,6 @@ JSON만 출력하라: {{"environment": "...", "rain_ok": true, "reason": "20자 
 태그: {tags}"""
 
 
-def load_env(path: str = ".env") -> None:
-    """.env를 읽어 환경변수에 채운다. 이미 있는 값은 덮지 않는다.
-
-    python-dotenv를 의존성에 더하지 않은 것은 이 한 가지만 필요해서다.
-    실제로 넣은 키가 안 읽혀서 '키가 없다'고 표시되면 한참을 헤맨다.
-    """
-    from pathlib import Path
-
-    f = Path(__file__).resolve().parent.parent / path
-    if not f.exists():
-        return
-    for line in f.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        k, v = k.strip(), v.strip().strip('"').strip("'")
-        if v and not os.environ.get(k):
-            os.environ[k] = v
-
-
-load_env()
-
-
 @dataclass
 class LLMResult:
     data: dict[str, Any]

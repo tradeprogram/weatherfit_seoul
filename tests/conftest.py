@@ -21,6 +21,12 @@ def offline_router(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def no_llm(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+def no_external_keys(monkeypatch):
+    """LLM과 기상청도 부르지 않는다.
+
+    실제 날씨로 테스트하면 비 오는 날과 맑은 날의 결과가 달라져,
+    같은 코드가 어제는 통과하고 오늘은 실패한다. 날씨 시나리오는
+    mode=clear|rain|heat 로 명시해 검증한다.
+    """
+    for k in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "KMA_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
