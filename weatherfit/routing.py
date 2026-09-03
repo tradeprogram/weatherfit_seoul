@@ -193,11 +193,19 @@ class Routing:
 
         후보를 고를 때 직선거리를 쓰면 한강 건너편이나 철길 반대편이
         '가까운 곳'으로 올라온다. 지도상 900m인데 걸어서 2.4km인 구간이
-        서울에 흔하다. 그렇다고 후보마다 경로를 물으면 수백 번을 부르게
-        되니, OSRM의 table 서비스로 한 번에 받는다.
+        서울에 흔하다. 그렇다고 후보마다 경로를 물으면 수백 번을 부르게 된다.
+
+        TMAP 키가 있으면 구간별로 나눠 동시에 묻는다 — 한 건에 130ms고
+        요청 제한이 없다. 키가 없을 때만 공개 OSRM의 table을 쓰는데,
+        그쪽은 목적지가 20개를 넘으면 10초를 물린다.
         """
         if self.offline or not dests:
             return [None] * len(dests)
+        if self.tmap:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(8, len(dests))) as ex:
+                legs = list(ex.map(lambda d: self.walk(origin, d), dests))
+            return [float(l.distance_m) if l.exact else None for l in legs]
         if self._osrm_down and time.time() < self._osrm_down:
             return [None] * len(dests)
 

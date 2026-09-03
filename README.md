@@ -254,6 +254,7 @@ SM/YG/JYP엔터테인먼트 · 종묘 · 창덕궁 · 숭례문 · 국립중앙�
 | `VISITSEOUL_API_KEY` | 공개 카탈로그를 소스로 수집 |
 | `KMA_API_KEY` | 맑음 21°C 기본값으로 판정 (허브·포털 키 모두 받는다) |
 | `TMAP_APP_KEY` | **공개 OSRM 보행 프로파일로 실측** (그것도 막히면 직선 × 국소 우회율) |
+| `ODSAY_REFERER` | ODsay가 등록 도메인을 Referer로 확인한다 (기본값 있음) |
 | `ODSAY_API_KEY` | 대중교통 시간을 평균속도로 추정 (도메인 등록 + `ODSAY_REFERER` 필요) |
 | `NAVER_CLIENT_ID`/`SECRET` | 자동차 시간을 직선거리로 추정 |
 | `KAKAO_REST_KEY` | 카카오 등재 확인을 건너뜀 |
@@ -282,7 +283,7 @@ API를 부르면 일정 하나에 수십 번을 묻게 된다. 다 정해진 뒤
 | `GET /api/where` | 7.7ms | — |
 | `GET /api/candidates` | 46.0ms | 179KB |
 | `POST /api/plan` | 67.3ms | 7.4KB |
-| `POST /api/plan` (구간 실측, 첫 조회) | 0.9s | 7.4KB |
+| `POST /api/plan` (구간 실측, 첫 조회) | 0.3~0.7s | 7.4KB |
 | `GET /api/stats` | 2.4ms | 캐시 |
 | `POST /api/chat` | 21.2ms | 5.5KB |
 
@@ -353,7 +354,7 @@ web/
   style.css      밝은 낮의 서울 — 글라스모피즘
   sw.js          로밍 중에도 앱이 열리게. 판정 결과만은 캐시하지 않는다
   vendor/        Leaflet (CDN 의존을 없애기 위해 동봉)
-tests/           257개. 실제로 났던 회귀를 그대로 박아 둔다
+tests/           261개. 실제로 났던 회귀를 그대로 박아 둔다
 ```
 
 자세한 설계 판단은 [ARCHITECTURE.md](ARCHITECTURE.md).

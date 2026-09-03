@@ -197,3 +197,38 @@ class TestOdsayAuth:
         leg = rt.Routing().transit(CITY_HALL, (37.4979, 127.0276))
         assert leg.provider == "estimate"      # 추정으로 떨어져야 한다
         assert leg.exact is False
+
+
+class TestMatrixProvider:
+    def test_TMAP이_있으면_공개_서버를_쓰지_않는다(self, monkeypatch):
+        """공개 OSRM은 목적지가 20개를 넘으면 10초를 물린다.
+        TMAP은 건당 130ms에 제한이 없으니 나눠서 동시에 묻는 편이 낫다."""
+        import weatherfit.routing as rt
+
+        called = []
+        monkeypatch.setenv("TMAP_APP_KEY", "있는-척")
+        r = rt.Routing()
+        monkeypatch.setattr(rt.requests, "get",
+                            lambda *a, **k: called.append("osrm"))
+        monkeypatch.setattr(
+            r, "walk",
+            lambda o, d, measure=True: rt.Leg(mode="walk", minutes=5,
+                                              distance_m=400, provider="tmap",
+                                              exact=True))
+        got = r.walk_matrix(CITY_HALL, [(37.57, 126.98)] * 3)
+        assert got == [400.0, 400.0, 400.0]
+        assert not called                    # OSRM table을 부르지 않았다
+
+    def test_추정으로_잰_건은_거리로_치지_않는다(self, monkeypatch):
+        """실측이 아닌 값을 거리 매트릭스에 섞으면, 순위가 '실제로 가까운
+        곳'이 아니라 '추정이 후한 곳'을 따라간다."""
+        import weatherfit.routing as rt
+
+        monkeypatch.setenv("TMAP_APP_KEY", "있는-척")
+        r = rt.Routing()
+        monkeypatch.setattr(
+            r, "walk",
+            lambda o, d, measure=True: rt.Leg(mode="walk", minutes=5,
+                                              distance_m=400,
+                                              provider="estimate", exact=False))
+        assert r.walk_matrix(CITY_HALL, [(37.57, 126.98)]) == [None]
