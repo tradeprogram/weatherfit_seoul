@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="웨더핏 서울">
 <meta name="description" content="오늘 날씨에, 지금 열려 있는 곳만 골라 짜는 서울 반나절 코스">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=49">
+<link rel="stylesheet" href="style.css?v=50">
 </head>
 <body>
 
@@ -61,8 +61,6 @@
   <nav class="tabs" id="tabs" role="tablist" aria-label="화면 전환">
     <button data-tab="plan" class="on" role="tab" aria-selected="true"
             aria-controls="pane-plan" id="tab-plan">일정</button>
-    <button data-tab="chat" role="tab" aria-selected="false"
-            aria-controls="pane-chat" id="tab-chat">대화</button>
     <button data-tab="list" role="tab" aria-selected="false"
             aria-controls="pane-list" id="tab-list">주변</button>
     <button data-tab="evidence" role="tab" aria-selected="false"
@@ -124,21 +122,6 @@
     <div class="notes" id="plan-notes" role="status"></div>
   </section>
 
-  <!-- 대화 -->
-  <section class="pane" id="pane-chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
-    <div class="chat-log" id="chat-log" role="log" aria-live="polite" aria-label="대화 내용"></div>
-    <div class="chips" id="chips">
-      <button>지금 여기서 3시간</button>
-      <button>비 오는데 실내로</button>
-      <button>밥 먹을 곳 위주로</button>
-      <button>전시 보고 싶어</button>
-    </div>
-    <form class="chat-box" id="chat-form">
-      <input id="chat-input" type="text" autocomplete="off"
-             placeholder="어디서 얼마나 시간이 있으신가요?">
-      <button type="submit" id="chat-send" aria-label="보내기">↑</button>
-    </form>
-  </section>
 
   <!-- 주변 -->
   <section class="pane" id="pane-list" role="tabpanel" aria-labelledby="tab-list" hidden>
@@ -166,6 +149,40 @@
   <button class="glass" id="btn-all" aria-pressed="false">주변 전체</button>
   <button class="glass" id="btn-me" title="내 위치로">내 위치</button>
 </div>
+
+
+<!-- 에이전트 — 탭이 아니라 언제든 열 수 있는 창 -->
+<button class="ai-fab" id="ai-fab" aria-expanded="false" aria-controls="ai-panel"
+        title="AI 도우미 열기 (Alt+A)">
+  <span class="ai-fab-mark">✦</span><span class="ai-fab-txt">AI 도우미</span>
+</button>
+
+<section class="ai-panel glass" id="ai-panel" hidden aria-label="AI 도우미">
+  <header class="ai-head">
+    <span class="ai-mark">✦</span>
+    <div class="ai-title">
+      <b>웨더핏 도우미</b>
+      <small id="ai-sub">지금 갈 수 있는 곳만 골라 드려요</small>
+    </div>
+    <button class="ai-close" id="ai-close" aria-label="닫기">✕</button>
+  </header>
+
+  <div class="ai-log" id="ai-log" role="log" aria-live="polite"
+       aria-label="도우미 대화"></div>
+
+  <div class="chips" id="ai-chips">
+    <button>지금 여기서 3시간</button>
+    <button>비 오는데 실내로</button>
+    <button>아이랑 갈 만한 곳</button>
+    <button>더운데 시원한 데 없어요?</button>
+  </div>
+
+  <form class="ai-box" id="ai-form">
+    <input id="ai-input" type="text" autocomplete="off"
+           placeholder="어디서 얼마나 시간이 있으신가요?">
+    <button type="submit" id="ai-send" aria-label="보내기">↑</button>
+  </form>
+</section>
 
 <div class="offline-bar" id="offline-bar" role="status" hidden>
   연결이 끊겼습니다. 새 일정은 짤 수 없지만 <b>보관함</b>에 저장해 둔 일정은
@@ -238,6 +255,6 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=49"></script>
+<script src="app.js?v=50"></script>
 </body>
 </html>

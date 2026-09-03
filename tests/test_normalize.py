@@ -212,3 +212,16 @@ class TestShowtimes:
     def test_한_시각뿐이면_회차로_보지_않는다(self):
         """'오후 7시 30분부터 90분간'은 회차 목록이 아니다."""
         assert parse_hours("오후 7시 30분부터 90분간 진행").rules == []
+
+
+class TestJosa:
+    """'정동극장로'가 아니라 '정동극장으로'."""
+
+    @pytest.mark.parametrize("word,want", [
+        ("정동극장", "으로"), ("청계천", "으로"), ("경복궁", "으로"),
+        ("리움 미술관", "으로"), ("북촌한옥마을", "로"),   # ㄹ 받침
+        ("아트선재센터", "로"), ("IFC몰", "로"),
+    ])
+    def test_받침에_맞는_조사(self, word, want):
+        from weatherfit.agent import josa
+        assert josa(word) == want

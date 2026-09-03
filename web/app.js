@@ -614,14 +614,35 @@ function selectCid(cid) {
   }
 }
 
-/* ───────────────────────── 대화 ───────────────────────── */
+/* ───────────────────── AI 도우미(에이전트) ─────────────────────
+   탭이 아니라 언제든 열 수 있는 창이다. 지도를 보다가, 일정을 보다가
+   막히는 순간에 묻게 되므로 화면을 갈아치우면 안 된다. */
+
+function aiOpen(on) {
+  const panel = $('#ai-panel'), fab = $('#ai-fab');
+  panel.hidden = !on;
+  fab.setAttribute('aria-expanded', String(on));
+  fab.classList.toggle('on', on);
+  if (on) {
+    if (!$('#ai-log').children.length) aiGreet();
+    setTimeout(() => $('#ai-input').focus(), 60);
+  }
+}
+
+function aiGreet() {
+  const w = S.where;
+  pushMsg('bot', w?.label
+    ? `${w.label}에 계시네요. 주변에 지금 갈 수 있는 곳이 ${w.nearby}곳 있어요.
+시간이 얼마나 있으신지 알려주시면 순서까지 짜 드릴게요.`
+    : '어디서 얼마나 시간이 있으신지 알려주세요. 지금 열려 있는 곳만 골라 드릴게요.');
+}
 
 function pushMsg(who, text) {
   const el = document.createElement('div');
   el.className = 'msg ' + (who === 'me' ? 'me' : 'bot');
   el.innerHTML = esc(text).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-  $('#chat-log').appendChild(el);
-  $('#chat-log').scrollTop = $('#chat-log').scrollHeight;
+  $('#ai-log').appendChild(el);
+  $('#ai-log').scrollTop = $('#ai-log').scrollHeight;
   return el;
 }
 
@@ -649,27 +670,69 @@ function adoptIntent(intent, course) {
   if (moved) refreshWhere();
 }
 
+/* 무엇을 했는지 보여 준다. 에이전트가 챗봇과 다른 점이 여기다 —
+   답만 던지지 않고 어떤 도구를 어떤 순서로 돌렸는지 남긴다. */
+function appendTrace(box, trace, engine) {
+  if (!trace || !trace.length) return;
+  const NAME = {
+    parse_intent:'말 이해', resolve_where:'위치 확인', apply_taste:'취향 반영',
+    plan_course:'일정 구성', read_weather:'날씨 조회', read_thermal:'위성 열지도',
+    measure_walk:'도보 실측', check_hours:'운영시간 확인',
+  };
+  const rows = trace.map(t => `<li class="tr-${esc(t.status)}">
+      <b>${esc(NAME[t.tool] || t.tool)}</b><span>${esc(t.detail || '')}</span></li>`).join('');
+  box.insertAdjacentHTML('beforeend', `
+    <details class="ai-trace"><summary>어떻게 골랐는지 (${trace.length}단계 ·
+      ${engine === 'llm' ? 'AI 문장' : '규칙 문장'})</summary>
+      <ul>${rows}</ul></details>`);
+}
+
+function appendEvidence(box, ev) {
+  if (!ev || !ev.length) return;
+  const cards = ev.slice(0, 4).map(e => `<div class="ai-ev">
+      <b>${esc(e.title)}</b><span>${esc(e.summary || '')}</span>
+      ${e.note ? `<small>${esc(e.note)}</small>` : ''}</div>`).join('');
+  box.insertAdjacentHTML('beforeend', `<div class="ai-evs">${cards}</div>`);
+}
+
+function appendActions(box, actions) {
+  if (!actions || !actions.length) return;
+  const el = document.createElement('div');
+  el.className = 'ai-acts';
+  actions.forEach(a => {
+    const b = document.createElement('button');
+    b.textContent = a.label;
+    b.onclick = () => {
+      if (a.act === 'save') { savePlan(); return; }
+      if (a.tab) switchTab(a.tab);
+      aiOpen(false);
+    };
+    el.appendChild(b);
+  });
+  box.appendChild(el);
+}
+
 async function send(text) {
-  const msg = (text || $('#chat-input').value).trim();
+  const msg = (text || $('#ai-input').value).trim();
   if (!msg || S.busy) return;
   S.busy = true;
-  $('#chat-input').value = '';
-  $('#chat-send').disabled = true;
+  $('#ai-input').value = '';
+  $('#ai-send').disabled = true;
 
   pushMsg('me', msg);
   S.history.push({ role:'user', content:msg });
   const typing = document.createElement('div');
   typing.className = 'typing';
   typing.innerHTML = '<i></i><i></i><i></i>';
-  $('#chat-log').appendChild(typing);
-  $('#chat-log').scrollTop = $('#chat-log').scrollHeight;
+  $('#ai-log').appendChild(typing);
+  $('#ai-log').scrollTop = $('#ai-log').scrollHeight;
 
   try {
-    const r = await fetch('/api/chat', {
+    const r = await fetch('/api/agent', {
       method:'POST', headers:{ 'Content-Type':'application/json' },
-      body:JSON.stringify({ messages:S.history, lat:S.lat, lon:S.lon,
-                            at:S.at, intent:S.intent, taste:S.taste,
-                            lang:S.lang }),
+      body:JSON.stringify({ message:msg, messages:S.history,
+                            lat:S.lat, lon:S.lon, at:S.at,
+                            intent:S.intent, taste:S.taste, lang:S.lang }),
     });
     const data = await r.json();
     typing.remove();
@@ -681,21 +744,18 @@ async function send(text) {
       if (data.course.weather) renderWeather(data.course.weather);
       renderPlan(); drawMap();
     }
-    const bubble = pushMsg('bot', data.reply);
-    const it = data.intent || {};
-    const bits = [it.area, it.hours ? `${it.hours}시간` : null,
-      { rain:'비', heat:'폭염', clear:'맑음', auto:'실시간 날씨' }[it.weather_mode],
-      (it.interests || []).join('·') || null].filter(Boolean);
-    bubble.insertAdjacentHTML('beforeend', `<span class="meta">${esc(bits.join(' · '))}
-      · ${data.engine === 'llm' ? 'AI 응답' : '규칙 기반'}</span>`);
-    S.history.push({ role:'assistant', content:data.reply });
-    switchTab('plan');
+    const answer = data.answer || data.reply || '';
+    const bubble = pushMsg('bot', answer);
+    appendTrace(bubble, data.tool_trace, data.engine);
+    appendEvidence(bubble, data.evidence);
+    appendActions(bubble, data.actions);
+    S.history.push({ role:'assistant', content:answer });
   } catch (e) {
     typing.remove();
     pushMsg('bot', '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
   } finally {
     S.busy = false;
-    $('#chat-send').disabled = false;
+    $('#ai-send').disabled = false;
   }
 }
 
@@ -856,7 +916,7 @@ function switchTab(name) {
     b.classList.toggle('on', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
-  ['plan','chat','list','evidence'].forEach(t => $('#pane-' + t).hidden = t !== name);
+  ['plan','list','evidence'].forEach(t => $('#pane-' + t).hidden = t !== name);
 }
 
 /* ───────────────────────── 시작 ───────────────────────── */
@@ -946,8 +1006,17 @@ function bindUI() {
 
   $$('#tabs button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 
-  $('#chat-form').onsubmit = e => { e.preventDefault(); send(); };
-  $$('#chips button').forEach(b => b.onclick = () => { switchTab('chat'); send(b.textContent); });
+  $('#ai-form').onsubmit = e => { e.preventDefault(); send(); };
+  $('#ai-fab').onclick = () => aiOpen($('#ai-panel').hidden);
+  document.addEventListener('keydown', e => {
+    if (e.altKey && (e.key === 'a' || e.key === 'A')) {
+      e.preventDefault(); aiOpen($('#ai-panel').hidden);
+    } else if (e.key === 'Escape' && !$('#ai-panel').hidden) {
+      aiOpen(false); $('#ai-fab').focus();
+    }
+  });
+  $('#ai-close').onclick = () => aiOpen(false);
+  $$('#ai-chips button').forEach(b => b.onclick = () => send(b.textContent));
 
   $('#btn-dong').onclick = e => {
     const on = e.currentTarget.classList.toggle('on');

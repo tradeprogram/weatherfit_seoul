@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from .chat import LANDMARKS, Intent, compose_reply, parse_intent
 from .popularity import scores as popularity_scores
 from .taste import PARTY_AVOID, PARTY_TAGS, Taste, mood_interests
+from .agent import compose, run_agent
 from .course import build_course
 from .index import Index, build_index
 from .llm import LLM
@@ -157,7 +158,7 @@ def where(lat: float, lon: float):
     inside = in_seoul(lat, lon)
     result = {
         "lat": lat, "lon": lon, "in_seoul": inside,
-        "gu": None, "dong": None, "label": None, "nearby": 0,
+        "gu": None, "dong": None, "adm_cd": None, "label": None, "nearby": 0,
     }
 
     gdf = dong_gdf()
@@ -168,6 +169,7 @@ def where(lat: float, lon: float):
             if not hit.empty:
                 row = hit.iloc[0]
                 result["gu"], result["dong"] = row["gu"], row["dong"]
+                result["adm_cd"] = str(row["adm_cd"])
                 result["label"] = f"{row['gu']} {row['dong']}"
         except Exception:
             pass
@@ -409,6 +411,67 @@ def _shift_start(at: str | None, hour: int | None) -> str | None:
         return at
     base = parse_when(at)
     return base.replace(hour=hour, minute=0).strftime("%Y-%m-%dT%H:%M")
+
+
+# ----------------------------------------------------------------- 에이전트
+
+def _agent_deps() -> dict:
+    """에이전트가 쓸 도구 묶음. 서버가 가진 것을 넘겨준다."""
+    from .remote import heat_of
+    return {
+        "llm": LLM(),
+        "where": lambda lat, lon: where(lat, lon),
+        "gu_center": _gu_center,
+        "shift_start": _shift_start,
+        "make_course": make_course,
+        "thermal": heat_of,
+    }
+
+
+class AgentIn(BaseModel):
+    message: str = ""
+    messages: list[ChatMessage] = []   # 예전 /api/chat 형식도 받는다
+    lat: float | None = None
+    lon: float | None = None
+    at: str | None = None
+    intent: dict | None = None
+    taste: dict | None = None
+    lang: str = "ko"
+
+
+@app.post("/api/agent")
+def agent_turn(body: AgentIn):
+    """에이전트 한 턴. 도구를 돌리고, 무엇을 했는지 함께 돌려준다."""
+    msg = body.message.strip()
+    if not msg and body.messages:
+        users = [m for m in body.messages if m.role == "user"]
+        msg = users[-1].content.strip() if users else ""
+    if not msg:
+        return {"answer": "어디서, 얼마나 시간이 있으신지 알려주시면 "
+                          "지금 갈 수 있는 곳만 골라 드릴게요.",
+                "course": None, "intent": None, "tool_trace": [],
+                "evidence": [], "actions": [], "engine": "rules"}
+
+    payload = {"message": msg, "lat": body.lat, "lon": body.lon,
+               "at": body.at, "intent": body.intent, "taste": body.taste,
+               "lang": body.lang}
+    deps = _agent_deps()
+    got = run_agent(payload, deps)
+    answer, engine = compose(payload, got, deps["llm"])
+
+    course = got["course"]
+    course["engine"] = engine
+    return {
+        "answer": answer, "reply": answer,        # 예전 이름도 함께
+        "course": course,
+        "intent": got["intent"].to_dict(),
+        "taste": got["taste"].to_dict(),
+        "taste_summary": got["taste"].describe(),
+        "where": got["where"], "heat": got["heat"],
+        "tool_trace": got["tool_trace"], "evidence": got["evidence"],
+        "actions": got["actions"], "origin": got["origin"],
+        "engine": engine, "llm_available": deps["llm"].available,
+    }
 
 
 @app.post("/api/chat")

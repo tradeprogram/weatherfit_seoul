@@ -346,3 +346,48 @@ class TestOffline:
         sw = client.get("/sw.js").text
         for asset in ("index.html", "style.css", "app.js", "vendor/leaflet.js"):
             assert asset in sw
+
+
+class TestAgent:
+    """에이전트는 도구를 돌리고 무엇을 했는지 남긴다."""
+
+    def ask(self, client, text, **kw):
+        body = {"message": text, "at": AT, **SEOUL}
+        body.update(kw)
+        return client.post("/api/agent", json=body).json()
+
+    def test_도구를_순서대로_돌린다(self, client):
+        d = self.ask(client, "지금 여기서 3시간")
+        tools = [t["tool"] for t in d["tool_trace"]]
+        assert tools[:2] == ["parse_intent", "resolve_where"]
+        assert "plan_course" in tools
+
+    def test_근거를_함께_준다(self, client):
+        d = self.ask(client, "지금 여기서 3시간")
+        kinds = {e["kind"] for e in d["evidence"]}
+        assert "weather" in kinds and "pick" in kinds
+
+    def test_답에_등장하는_장소는_전부_실제_콘텐츠다(self, client):
+        """LLM이 장소를 지어내면 '갔는데 없더라'가 다시 시작된다."""
+        d = self.ask(client, "성수에서 2시간")
+        known = server.index().by_cid
+        assert all(s["cid"] in known for s in d["course"]["steps"])
+        for s in d["course"]["steps"]:
+            assert s["title"] in d["answer"]
+
+    def test_키가_없어도_답이_나온다(self, client):
+        d = self.ask(client, "북촌에서 3시간")
+        assert d["answer"] and d["engine"] in ("rules", "llm")
+
+    def test_빈_말에는_되묻는다(self, client):
+        d = client.post("/api/agent", json={"message": "  "}).json()
+        assert "알려주시면" in d["answer"] and d["course"] is None
+
+    def test_바로_누를_수_있는_행동을_준다(self, client):
+        d = self.ask(client, "지금 여기서 3시간")
+        assert {a["label"] for a in d["actions"]} >= {"일정 보기", "판정 근거"}
+
+    def test_폭염이면_위성_열지도를_본다(self, client):
+        d = self.ask(client, "폭염인데 3시간", at="2026-08-05T14:00")
+        assert any(t["tool"] == "read_thermal" for t in d["tool_trace"])
+        assert d["heat"] and "lst_c" in d["heat"]

@@ -623,3 +623,82 @@ input:focus,select:focus{background:#fff}
   background:rgba(255,238,214,.97);border:1px solid rgba(214,150,60,.5);
   box-shadow:0 6px 20px rgba(31,45,61,.18)}
 .offline-bar[hidden]{display:none}
+
+/* ═════════ AI 도우미 — 탭이 아니라 떠 있는 창 ═════════ */
+.ai-fab{position:fixed;right:var(--pad);bottom:var(--pad);z-index:45;
+  display:flex;align-items:center;gap:8px;padding:11px 18px 11px 14px;
+  border:none;border-radius:999px;cursor:pointer;font-family:var(--round);
+  font-size:13.5px;font-weight:600;color:#fff;
+  background:linear-gradient(135deg,#2b8fd8,#1f6fc0);
+  box-shadow:0 8px 22px rgba(31,111,192,.36);
+  transition:transform .16s,box-shadow .16s}
+.ai-fab:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(31,111,192,.44)}
+.ai-fab.on{background:linear-gradient(135deg,#4a5a6b,#33414f)}
+.ai-fab-mark{font-size:16px;line-height:1}
+
+.ai-panel{position:fixed;right:var(--pad);bottom:calc(var(--pad) + 58px);
+  z-index:46;width:min(400px,calc(100vw - var(--pad)*2));
+  max-height:min(560px,calc(100vh - 150px));
+  display:flex;flex-direction:column;padding:0;overflow:hidden;
+  animation:ai-in .18s ease-out}
+.ai-panel[hidden]{display:none}
+@keyframes ai-in{from{opacity:0;transform:translateY(10px) scale(.985)}
+                 to{opacity:1;transform:none}}
+
+.ai-head{display:flex;align-items:center;gap:10px;flex:0 0 auto;
+  padding:13px 15px;border-bottom:1px solid var(--line)}
+.ai-mark{width:28px;height:28px;flex:0 0 auto;display:grid;place-items:center;
+  border-radius:9px;color:#fff;font-size:14px;
+  background:linear-gradient(135deg,#2b8fd8,#1f6fc0)}
+.ai-title{flex:1;min-width:0;line-height:1.3}
+.ai-title b{display:block;font-size:13.5px;font-family:var(--round)}
+.ai-title small{display:block;font-size:10.5px;color:var(--ink-3)}
+.ai-close{border:none;background:none;cursor:pointer;font-size:14px;
+  color:var(--ink-3);padding:4px 6px;border-radius:8px}
+.ai-close:hover{background:rgba(125,146,166,.14);color:var(--ink-1)}
+
+.ai-log{flex:1 1 auto;overflow-y:auto;padding:14px 15px;min-height:150px}
+.ai-box{display:flex;gap:8px;flex:0 0 auto;padding:11px 15px 14px;
+  border-top:1px solid var(--line)}
+.ai-box input{flex:1;min-width:0;padding:9px 13px;font-size:13px;
+  border-radius:11px;border:1px solid var(--glass-edge);
+  background:rgba(255,255,255,.85)}
+.ai-box input:focus{outline:2px solid var(--primary);outline-offset:-1px}
+.ai-box button{flex:0 0 auto;width:36px;height:36px;border:none;cursor:pointer;
+  border-radius:11px;color:#fff;font-size:15px;background:var(--primary)}
+.ai-box button:disabled{opacity:.5;cursor:default}
+.ai-panel .chips{padding:0 15px 10px;gap:5px}
+
+/* 도구 기록 — 에이전트가 챗봇과 다른 점 */
+.ai-trace{margin-top:9px;font-size:11px}
+.ai-trace summary{cursor:pointer;color:var(--ink-3);font-size:10.5px;
+  padding:3px 0;list-style:none}
+.ai-trace summary::-webkit-details-marker{display:none}
+.ai-trace summary::before{content:"▸ ";font-size:9px}
+.ai-trace[open] summary::before{content:"▾ "}
+.ai-trace ul{margin:6px 0 0;padding:8px 10px;list-style:none;
+  border-radius:9px;background:rgba(125,146,166,.09)}
+.ai-trace li{display:flex;gap:8px;padding:2.5px 0;line-height:1.4}
+.ai-trace li b{flex:0 0 74px;font-weight:600;color:var(--ink-2)}
+.ai-trace li span{flex:1;color:var(--ink-3);word-break:break-all}
+.ai-trace li.tr-empty b,.ai-trace li.tr-assumed b{color:#b56a1e}
+
+.ai-evs{display:flex;flex-direction:column;gap:5px;margin-top:8px}
+.ai-ev{padding:7px 10px;border-radius:9px;font-size:11px;line-height:1.45;
+  background:rgba(43,143,216,.07);border:1px solid rgba(43,143,216,.16)}
+.ai-ev b{display:block;font-size:11.5px;color:var(--ink-1)}
+.ai-ev span{color:var(--ink-2)}
+.ai-ev small{display:block;margin-top:2px;color:var(--ink-3);font-size:10px}
+
+.ai-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.ai-acts button{padding:5px 11px;font-size:11.5px;border-radius:999px;
+  cursor:pointer;color:var(--primary);background:rgba(43,143,216,.1);
+  border:1px solid rgba(43,143,216,.3)}
+.ai-acts button:hover{background:var(--primary);color:#fff;border-color:transparent}
+
+@media (max-width:980px){
+  .ai-fab{right:12px;bottom:12px;padding:10px 15px 10px 12px}
+  .ai-fab-txt{display:none}
+  .ai-panel{right:8px;left:8px;width:auto;bottom:70px;
+    max-height:min(72vh,540px)}
+}
