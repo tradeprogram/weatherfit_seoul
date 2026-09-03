@@ -658,9 +658,12 @@ input:focus,select:focus{background:#fff}
 .ai-fab.on{background:linear-gradient(135deg,#4a5a6b,#33414f)}
 .ai-fab-mark{font-size:16px;line-height:1}
 
+/* 답이 시간표라 세로로 길다. 여기에 도구 기록과 근거 카드까지 붙으므로
+   창이 낮으면 몇 줄만 보이고 계속 스크롤하게 된다. 높이를 넉넉히 준다.
+   폭은 400px이 적당하다 — 더 넓히면 한 줄이 길어져 눈이 되돌아오기 힘들다. */
 .ai-panel{position:fixed;right:var(--pad);bottom:calc(var(--pad) + 58px);
   z-index:46;width:min(400px,calc(100vw - var(--pad)*2));
-  max-height:min(560px,calc(100vh - 150px));
+  max-height:min(1040px,calc(100vh - 110px));
   display:flex;flex-direction:column;padding:0;overflow:hidden;
   animation:ai-in .18s ease-out}
 .ai-panel[hidden]{display:none}
@@ -679,7 +682,7 @@ input:focus,select:focus{background:#fff}
   color:var(--ink-3);padding:4px 6px;border-radius:8px}
 .ai-close:hover{background:rgba(125,146,166,.14);color:var(--ink-1)}
 
-.ai-log{flex:1 1 auto;overflow-y:auto;padding:14px 15px;min-height:150px}
+.ai-log{flex:1 1 auto;overflow-y:auto;padding:16px 18px;min-height:420px}
 .ai-box{display:flex;gap:8px;flex:0 0 auto;padding:11px 15px 14px;
   border-top:1px solid var(--line)}
 .ai-box input{flex:1;min-width:0;padding:9px 13px;font-size:13px;
@@ -705,7 +708,7 @@ input:focus,select:focus{background:#fff}
 .ai-trace li span{flex:1;color:var(--ink-3);word-break:break-all}
 .ai-trace li.tr-empty b,.ai-trace li.tr-assumed b{color:#b56a1e}
 
-.ai-evs{display:flex;flex-direction:column;gap:5px;margin-top:8px}
+.ai-evs{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .ai-ev{padding:7px 10px;border-radius:9px;font-size:11px;line-height:1.45;
   background:rgba(43,143,216,.07);border:1px solid rgba(43,143,216,.16)}
 .ai-ev b{display:block;font-size:11.5px;color:var(--ink-1)}
@@ -722,7 +725,8 @@ input:focus,select:focus{background:#fff}
   .ai-fab{right:12px;bottom:12px;padding:10px 15px 10px 12px}
   .ai-fab-txt{display:none}
   .ai-panel{right:8px;left:8px;width:auto;bottom:70px;
-    max-height:min(72vh,540px)}
+    max-height:min(80vh,640px)}
+  .ai-log{min-height:240px;padding:14px 15px}
 }
 
 /* ═════════ 지도 모드 ═════════ */
@@ -756,3 +760,10 @@ body.lst-on .leaflet-layer.basemap{filter:saturate(.12) brightness(1.16) contras
 .styles button{border-style:dashed}
 .styles button.on{border-style:solid;
   background:linear-gradient(135deg,#3f9fdd,#2b7fc4);border-color:transparent}
+
+/* 타이핑 중 커서. 답이 아직 오는 중이라는 표시다. */
+.msg.typing-on::after{content:"";display:inline-block;width:2px;height:1em;
+  margin-left:1px;vertical-align:-2px;background:var(--ink-2);
+  animation:caret .8s step-end infinite}
+@keyframes caret{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){ .msg.typing-on::after{display:none} }

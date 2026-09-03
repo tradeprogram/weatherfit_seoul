@@ -750,19 +750,62 @@ function aiOpen(on) {
 
 function aiGreet() {
   const w = S.where;
-  pushMsg('bot', w?.label
+  const el = pushMsg('bot', '');
+  typeInto(el, w?.label
     ? `${w.label}에 계시네요. 주변에 지금 갈 수 있는 곳이 ${w.nearby}곳 있어요.
 시간이 얼마나 있으신지 알려주시면 순서까지 짜 드릴게요.`
     : '어디서 얼마나 시간이 있으신지 알려주세요. 지금 열려 있는 곳만 골라 드릴게요.');
 }
 
+const fmtMsg = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+
 function pushMsg(who, text) {
   const el = document.createElement('div');
   el.className = 'msg ' + (who === 'me' ? 'me' : 'bot');
-  el.innerHTML = esc(text).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  el.innerHTML = fmtMsg(text);
   $('#ai-log').appendChild(el);
   $('#ai-log').scrollTop = $('#ai-log').scrollHeight;
   return el;
+}
+
+/* 답을 한 글자씩 흘려 준다.
+
+   통째로 나타나면 어디부터 읽어야 할지 모르겠고, 무엇보다 방금 도구를
+   돌려 만든 답이라는 감각이 사라진다. 다만 길이에 비례해 마냥 길어지면
+   기다리는 시간이 되므로 전체를 1.6초 안에 끝낸다 — 연출이지 지연이
+   아니어야 한다. 움직임을 줄이도록 설정한 사람에게는 바로 보여 준다. */
+function typeInto(el, text, done) {
+  const log = $('#ai-log');
+  const finish = () => {
+    el.classList.remove('typing-on');
+    el.innerHTML = fmtMsg(text);
+    log.scrollTop = log.scrollHeight;
+    if (done) done();
+  };
+  if (!text || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return finish();
+  }
+  const STEP = 16;
+  const budget = Math.min(1600, Math.max(350, text.length * 11));
+  const began = performance.now();
+  el.classList.add('typing-on');
+
+  // 진행을 '몇 번 그렸나'가 아니라 '얼마나 지났나'로 잰다.
+  //
+  // requestAnimationFrame은 탭이 안 보이면 아예 멈추고, 타이머도 배경
+  // 탭에서는 초 단위로 늘어난다. 틱마다 몇 글자씩 더하는 방식으로 두면
+  // 그때 타이핑이 기어가서, 다른 탭을 보다 돌아온 사람 앞에 답이 반쯤
+  // 쓰이다 만 채로 남는다. 경과 시간으로 계산하면 밀린 만큼 따라잡는다.
+  const tick = () => {
+    if (!el.isConnected) return;          // 대화를 지웠으면 그만둔다
+    const done = (performance.now() - began) / budget;
+    const i = Math.min(text.length, Math.ceil(text.length * done));
+    el.innerHTML = fmtMsg(text.slice(0, i));
+    log.scrollTop = log.scrollHeight;
+    if (done < 1) setTimeout(tick, STEP);
+    else finish();
+  };
+  setTimeout(tick, STEP);
 }
 
 /* 대화로 정한 조건을 화면 상태에 반영한다.
@@ -867,10 +910,15 @@ async function send(text) {
       renderPlan(); drawMap();
     }
     const answer = data.answer || data.reply || '';
-    const bubble = pushMsg('bot', answer);
-    appendTrace(bubble, data.tool_trace, data.engine);
-    appendEvidence(bubble, data.evidence);
-    appendActions(bubble, data.actions);
+    const bubble = pushMsg('bot', '');
+    // 근거와 행동 버튼은 문장이 다 나온 뒤에 붙인다. 타이핑 중에 아래에서
+    // 버튼이 먼저 튀어나오면 읽던 자리가 밀린다.
+    typeInto(bubble, answer, () => {
+      appendTrace(bubble, data.tool_trace, data.engine);
+      appendEvidence(bubble, data.evidence);
+      appendActions(bubble, data.actions);
+      $('#ai-log').scrollTop = $('#ai-log').scrollHeight;
+    });
     S.history.push({ role:'assistant', content:answer });
   } catch (e) {
     typing.remove();
