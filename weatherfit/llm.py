@@ -27,6 +27,14 @@ GEMINI_URL = ("https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_MODEL = os.environ.get("WEATHERFIT_MODEL", "claude-sonnet-5")
 GEMINI_MODEL = os.environ.get("WEATHERFIT_GEMINI_MODEL", "gemini-3.6-flash")
 
+# 잠깐 밀린 것과 정말 안 되는 것은 다르다. 앞의 것은 기다렸다 다시 물으면 된다.
+RETRY_STATUS = (429, 500, 502, 503, 504)
+RETRIES = 2
+BACKOFF = 0.8
+# 대화형 화면이 기다릴 수 있는 한계. 이걸 넘기면 규칙 답변으로 떨어진다 —
+# 완결된 템플릿이 1분짜리 침묵보다 낫다.
+BUDGET_S = 22.0
+
 _HOURS_SCHEMA = """{
   "always_open": false,
   "rules": [{"days": [0,1,2,3,4], "ranges": [["09:00","18:00"]]}],
@@ -99,7 +107,7 @@ class LLMResult:
 
 class LLM:
     def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL,
-                 timeout: int = 60):
+                 timeout: int = 12):
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self.gemini_key = os.environ.get("GEMINI_API_KEY", "")
         self.model = model
@@ -135,6 +143,37 @@ class LLM:
         r.raise_for_status()
         return r.json()["content"][0]["text"]
 
+    def _post_retrying(self, url: str, headers: dict, payload: dict):
+        """503·429처럼 잠깐 밀린 응답은 기다렸다 다시 묻는다.
+
+        한 번 밀렸다고 곧장 규칙 답변으로 떨어지면, 키를 넣어 둔 의미가
+        없어진다. 정말 안 되는 것(401·404·400)은 즉시 포기한다 —
+        기다려도 달라지지 않고 사용자만 기다리게 된다.
+        """
+        import time
+
+        began = time.monotonic()
+        last_status = None
+        for attempt in range(RETRIES + 1):
+            left = BUDGET_S - (time.monotonic() - began)
+            if left <= 1.0:
+                break
+            try:
+                r = requests.post(url, headers=headers, json=payload,
+                                  timeout=min(self.timeout, left))
+            except (requests.Timeout, requests.ConnectionError):
+                continue                    # 끊긴 것도 잠깐 밀린 것일 수 있다
+            if r.status_code not in RETRY_STATUS:
+                r.raise_for_status()
+                return r
+            last_status = r.status_code
+            if attempt < RETRIES:
+                time.sleep(min(BACKOFF * (2 ** attempt),
+                               max(0.0, BUDGET_S - (time.monotonic() - began))))
+        raise requests.HTTPError(
+            f"{BUDGET_S:.0f}초 안에 응답을 받지 못했습니다"
+            + (f" (마지막 {last_status})" if last_status else ""))
+
     def _call_gemini(self, prompt: str, max_tokens: int) -> str:
         """Gemini 호출.
 
@@ -144,18 +183,16 @@ class LLM:
         토큰이 들어가므로 예산을 넉넉히 준다. 모자라면 본문이 잘린 채
         생각만 남는다.
         """
-        r = requests.post(
+        r = self._post_retrying(
             GEMINI_URL.format(model=GEMINI_MODEL),
             headers={"x-goog-api-key": self.gemini_key,
                      "content-type": "application/json"},
-            json={"contents": [{"parts": [{"text": prompt}]}],
-                  "generationConfig": {
-                      "maxOutputTokens": max(max_tokens, 1024) * 4,
-                      "temperature": 0.4,
-                      "thinkingConfig": {"thinkingLevel": "low"}}},
-            timeout=self.timeout,
+            payload={"contents": [{"parts": [{"text": prompt}]}],
+                     "generationConfig": {
+                         "maxOutputTokens": max(max_tokens, 1024) * 4,
+                         "temperature": 0.4,
+                         "thinkingConfig": {"thinkingLevel": "low"}}},
         )
-        r.raise_for_status()
         cand = (r.json().get("candidates") or [{}])[0]
         parts = (cand.get("content") or {}).get("parts") or []
         text = "".join(p.get("text", "") for p in parts
