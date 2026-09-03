@@ -77,13 +77,23 @@ try {
 
 const LST_RAMP = ['#e29a64','#d47a33','#bb5c1d','#9c4514','#77330e','#522109'];
 
+/* 등간격으로 나누면 서울 대부분이 맨 위 칸에 몰려 지도가 통째로 진해진다.
+   실제 분포가 더운 쪽으로 치우쳐 있기 때문이다. 그래서 분위(quantile)로
+   나눠 칸마다 행정동이 비슷하게 들어가게 한다 — 공간 구조가 그때 보인다.
+   대신 범례에 각 칸의 실제 온도 경계를 적어 크기 정보를 잃지 않는다. */
 function lstColor(c) {
   const t = S.thermal;
   if (c == null || !t) return null;
-  const { lo, hi } = t.range;
-  const i = Math.min(LST_RAMP.length - 1,
-                     Math.max(0, Math.floor((c - lo) / (hi - lo) * LST_RAMP.length)));
-  return LST_RAMP[i];
+  const b = t.breaks;
+  let i = 0;
+  while (i < b.length && c >= b[i]) i++;
+  return LST_RAMP[Math.min(i, LST_RAMP.length - 1)];
+}
+
+function quantiles(vals, n) {
+  const v = [...vals].sort((a, b) => a - b);
+  return Array.from({ length: n - 1 },
+    (_, i) => v[Math.floor(v.length * (i + 1) / n)]);
 }
 
 function dongStyle(f) {
@@ -114,7 +124,8 @@ async function setMapMode(mode) {
       const vals = Object.values(d.dong).map(r => r.lst_c);
       if (!vals.length) throw new Error('열지도 데이터가 비어 있습니다');
       S.thermal = { dong:d.dong, meta:d.meta,
-                    range:{ lo:Math.min(...vals), hi:Math.max(...vals) } };
+                    range:{ lo:Math.min(...vals), hi:Math.max(...vals) },
+                    breaks:quantiles(vals, LST_RAMP.length) };
       renderLstLegend();
     } catch (e) {
       toast('지표면온도 자료를 불러오지 못했습니다');
@@ -135,24 +146,30 @@ function bindLstTip(layer) {
   const row = S.thermal.dong[layer.feature.properties.adm_cd];
   const p = layer.feature.properties;
   if (!row) return layer.bindTooltip(`${p.gu} ${p.dong}<br>자료 없음`, { sticky:true });
+  // 상위 0%는 말이 안 된다. 양 끝은 말로 적는다.
+  const rank = row.lst_pct >= 99 ? '서울에서 가장 더운 축'
+             : row.lst_pct <= 2  ? '서울에서 가장 시원한 축'
+             : `서울 상위 ${100 - row.lst_pct}%`;
   layer.bindTooltip(
     `<b>${esc(p.gu)} ${esc(p.dong)}</b><br>지표면온도 ${row.lst_c}°C` +
-    ` <span class="tt-dim">(서울 상위 ${100 - row.lst_pct}%)</span><br>` +
+    ` <span class="tt-dim">(${rank})</span><br>` +
     `식생지수 ${row.ndvi ?? '—'}`, { sticky:true, className:'lst-tip' });
 }
 
 function renderLstLegend() {
   const { lo, hi } = S.thermal.range;
-  $('#lst-ramp').innerHTML = LST_RAMP.map((c, i) => {
-    const a = lo + (hi - lo) * i / LST_RAMP.length;
-    const b = lo + (hi - lo) * (i + 1) / LST_RAMP.length;
-    return `<span style="background:${c}" title="${a.toFixed(1)}~${b.toFixed(1)}°C"></span>`;
-  }).join('');
-  $('#lst-lo').textContent = `${lo.toFixed(1)}°C`;
-  $('#lst-hi').textContent = `${hi.toFixed(1)}°C`;
+  const b = S.thermal.breaks;
+  const edges = [lo, ...b, hi];
+  $('#lst-ramp').innerHTML = LST_RAMP.map((c, i) =>
+    `<span style="background:${c}" title="${edges[i].toFixed(1)}~${edges[i + 1].toFixed(1)}°C"></span>`
+  ).join('');
+  $('#lst-lo').textContent = `${lo.toFixed(0)}°C`;
+  $('#lst-hi').textContent = `${hi.toFixed(0)}°C`;
+  $('#lst-mid').textContent = b.map(v => v.toFixed(0)).join(' · ') + '°C';
   const m = S.thermal.meta || {};
   $('#lst-src').textContent =
-    `Landsat 8/9 · Sentinel-2 여름 한낮 합성 · 행정동 ${m.dong || 426}개`;
+    `Landsat 8/9 · Sentinel-2 여름 한낮 합성 · 행정동 ${m.dong || 426}개 · ` +
+    `칸마다 ${Math.round(426 / LST_RAMP.length)}곳씩(분위 구간)`;
 }
 
 /* ───────────────────────── 통신 ───────────────────────── */
