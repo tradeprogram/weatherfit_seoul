@@ -31,10 +31,17 @@
 | `GEMINI_API_KEY` | 규칙 기반 답변 |
 | `VISITSEOUL_API_KEY` | 저장소에 든 수집본 사용 |
 | `ODSAY_API_KEY` | 대중교통 시간 추정 |
+| `ODSAY_REFERER` | (기본 `https://weatherfit-seoul.vercel.app`) |
 | `TMAP_APP_KEY` | 공개 OSRM으로 도보 실측 |
 
 서비스 이름을 바꾸면 주소도 바뀌므로 `vercel.json`의 rewrite 대상도 같이
 고쳐야 한다.
+
+ODsay는 등록된 도메인에서 온 호출만 받고 그 판정을 `Referer`로 한다.
+[lab.odsay.com](https://lab.odsay.com) 마이페이지에 프로토콜 없이
+`weatherfit-seoul.vercel.app`을 등록하고, 서버가 그 값을 헤더로 보낸다
+(`ODSAY_REFERER`). 등록만 하고 헤더를 안 보내면 키가 맞아도
+`ApiKeyAuthFailed`가 난다 — 서버 호출에는 Referer가 아예 없기 때문이다.
 
 **무료 티어는 15분 놀면 잠든다.** 다시 깨는 데 50초쯤 걸린다. 심사 기간에
 데모를 돌리실 거면 유료 인스턴스로 올리거나, 외부 헬스체크(UptimeRobot 등)로

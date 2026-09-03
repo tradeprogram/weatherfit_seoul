@@ -254,7 +254,7 @@ SM/YG/JYP엔터테인먼트 · 종묘 · 창덕궁 · 숭례문 · 국립중앙�
 | `VISITSEOUL_API_KEY` | 공개 카탈로그를 소스로 수집 |
 | `KMA_API_KEY` | 맑음 21°C 기본값으로 판정 (허브·포털 키 모두 받는다) |
 | `TMAP_APP_KEY` | **공개 OSRM 보행 프로파일로 실측** (그것도 막히면 직선 × 국소 우회율) |
-| `ODSAY_API_KEY` | 대중교통 시간을 평균속도로 추정 |
+| `ODSAY_API_KEY` | 대중교통 시간을 평균속도로 추정 (도메인 등록 + `ODSAY_REFERER` 필요) |
 | `NAVER_CLIENT_ID`/`SECRET` | 자동차 시간을 직선거리로 추정 |
 | `KAKAO_REST_KEY` | 카카오 등재 확인을 건너뜀 |
 | `GOOGLE_PLACES_KEY` | 평점 없이 위키 조회수만 |
@@ -353,7 +353,7 @@ web/
   style.css      밝은 낮의 서울 — 글라스모피즘
   sw.js          로밍 중에도 앱이 열리게. 판정 결과만은 캐시하지 않는다
   vendor/        Leaflet (CDN 의존을 없애기 위해 동봉)
-tests/           255개. 실제로 났던 회귀를 그대로 박아 둔다
+tests/           257개. 실제로 났던 회귀를 그대로 박아 둔다
 ```
 
 자세한 설계 판단은 [ARCHITECTURE.md](ARCHITECTURE.md).

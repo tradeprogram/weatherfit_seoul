@@ -171,3 +171,29 @@ class TestCache:
         for i in range(CACHE_MAX + 10):
             r._remember(("walk", i, 0, 0, 0), leg)
         assert len(r._cache) < CACHE_MAX
+
+
+class TestOdsayAuth:
+    def test_등록_도메인을_Referer로_밝힌다(self):
+        """ODsay는 등록 도메인 판정을 Referer로 한다. 서버에서 requests로
+        부르면 Referer가 없어서, 도메인을 제대로 등록해도 인증에 실패한다."""
+        r = Routing()
+        assert r.odsay_referer.startswith("http")
+
+    def test_200에_담겨_오는_오류를_성공으로_보지_않는다(self, monkeypatch):
+        """ODsay는 인증 실패도 200으로 보낸다. 상태 코드만 보면
+        '인증 실패'를 정상 응답으로 착각해 빈 경로가 화면에 나간다."""
+        import weatherfit.routing as rt
+
+        class Fake:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {"error": [{"code": "500",
+                                   "message": "[ApiKeyAuthFailed] ..."}]}
+
+        monkeypatch.setenv("ODSAY_API_KEY", "있는-척")
+        monkeypatch.setattr(rt.requests, "get", lambda *a, **k: Fake())
+        leg = rt.Routing().transit(CITY_HALL, (37.4979, 127.0276))
+        assert leg.provider == "estimate"      # 추정으로 떨어져야 한다
+        assert leg.exact is False

@@ -109,6 +109,11 @@ class Routing:
         self.offline = offline
         self.tmap = os.environ.get("TMAP_APP_KEY", "")
         self.odsay = os.environ.get("ODSAY_API_KEY", "")
+        # ODsay는 등록된 도메인에서 온 호출만 받는데, 그 판정을 Referer로 한다.
+        # 서버에서 requests로 부르면 Referer가 아예 없어서, 도메인을 제대로
+        # 등록해도 ApiKeyAuthFailed가 난다. 우리가 어느 서비스인지 밝힌다.
+        self.odsay_referer = os.environ.get(
+            "ODSAY_REFERER", "https://weatherfit-seoul.vercel.app")
         self.naver_id = os.environ.get("NAVER_CLIENT_ID", "")
         self.naver_secret = os.environ.get("NAVER_CLIENT_SECRET", "")
         self._cache: dict[tuple, Leg] = {}
@@ -299,10 +304,14 @@ class Routing:
                     "https://api.odsay.com/v1/api/searchPubTransPathT",
                     params={"SX": o[1], "SY": o[0], "EX": d[1], "EY": d[0],
                             "apiKey": self.odsay, "OPT": 0},
+                    headers={"Referer": self.odsay_referer},
                     timeout=self.timeout,
                 )
                 r.raise_for_status()
-                path = r.json()["result"]["path"][0]
+                body = r.json()
+                if "error" in body:      # 200으로 오류를 담아 보낸다
+                    raise ValueError(body["error"][0].get("message", "ODsay 오류"))
+                path = body["result"]["path"][0]
                 info = path["info"]
                 lines: list[str] = []
                 for sp in path.get("subPath", []):
