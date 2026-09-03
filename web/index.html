@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="웨더핏 서울">
 <meta name="description" content="오늘 날씨에, 지금 열려 있는 곳만 골라 짜는 서울 반나절 코스">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=50">
+<link rel="stylesheet" href="style.css?v=51">
 </head>
 <body>
 
@@ -145,6 +145,10 @@
 </aside>
 
 <div class="map-ctl">
+  <div class="seg-map glass" role="group" aria-label="지도 모드">
+    <button class="on" data-map="plain" aria-pressed="true">지도</button>
+    <button data-map="lst" aria-pressed="false">🛰 지표온도</button>
+  </div>
   <button class="glass on" id="btn-dong" aria-pressed="true">행정동</button>
   <button class="glass" id="btn-all" aria-pressed="false">주변 전체</button>
   <button class="glass" id="btn-me" title="내 위치로">내 위치</button>
@@ -189,12 +193,19 @@
   그대로 보실 수 있습니다.
 </div>
 
-<div class="legend glass">
+<div class="legend glass" id="legend-plan">
   <div class="legend-head">일정</div>
   <div class="legend-row"><span class="dot anchor"></span>오늘의 앵커</div>
   <div class="legend-row"><span class="dot food"></span>식사·카페</div>
   <div class="legend-row"><span class="dot spot"></span>둘러볼 곳</div>
   <div class="legend-row"><span class="dot me"></span>내 위치</div>
+</div>
+
+<div class="legend legend-lst glass" id="legend-lst" hidden>
+  <div class="legend-head">여름 한낮 지표면온도</div>
+  <div class="ramp" id="lst-ramp"></div>
+  <div class="ramp-ax"><span id="lst-lo"></span><span id="lst-hi"></span></div>
+  <p class="legend-note" id="lst-src"></p>
 </div>
 
 <!-- 위치 요청 -->
@@ -255,6 +266,6 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=50"></script>
+<script src="app.js?v=51"></script>
 </body>
 </html>

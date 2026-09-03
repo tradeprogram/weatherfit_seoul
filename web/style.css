@@ -702,3 +702,28 @@ input:focus,select:focus{background:#fff}
   .ai-panel{right:8px;left:8px;width:auto;bottom:70px;
     max-height:min(72vh,540px)}
 }
+
+/* ═════════ 지도 모드 ═════════ */
+.seg-map{display:flex;gap:2px;padding:3px;border-radius:12px}
+.seg-map button{padding:5px 11px;font-size:11.5px;border:none;border-radius:9px;
+  cursor:pointer;color:var(--ink-2);background:none;white-space:nowrap}
+.seg-map button:hover{background:rgba(125,146,166,.14)}
+.seg-map button.on{background:var(--primary);color:#fff;font-weight:600}
+
+/* 열지도에서는 배경 지도를 더 눌러 준다. 색 계단이 도로와 겨루면 안 된다. */
+body.lst-on .leaflet-layer.basemap{filter:saturate(.12) brightness(1.16) contrast(.82)}
+
+.legend-lst{max-width:220px}
+.ramp{display:flex;height:11px;border-radius:4px;overflow:hidden;margin:2px 0 4px}
+.ramp span{flex:1}
+.ramp-ax{display:flex;justify-content:space-between;font-size:10px;
+  color:var(--ink-3);margin-bottom:2px}
+.legend-lst .legend-note{margin-top:6px;padding-top:6px;font-size:9.5px}
+
+.lst-tip{font-size:11.5px;line-height:1.5}
+.lst-tip .tt-dim{color:#6b7c8c}
+@media (max-width:980px){
+  /* 일정 범례는 한 줄로 눕히지만 색 계단은 가로로 이어져야 읽힌다 */
+  .legend-lst{display:block;max-width:none}
+  .legend-lst .ramp{width:100%}
+}

@@ -15,6 +15,7 @@ const S = {
   mode:'auto', hours:4, at:null,
   course:null, candidates:[], stats:null,
   catFilter:null, selected:null, showAll:false,
+  mapMode:'plain', thermal:null, dongGeo:null,
   history:[], intent:null, busy:false,
   interests:[], taste:null, lang:'ko', langsReady:['ko'], exclude:[],
 };
@@ -55,17 +56,103 @@ try {
   mapReady = true;
 
   fetch('data/seoul_dong.geojson').then(r => r.json()).then(gj => {
-    layers.dong = L.geoJSON(gj, {
-      style:{ color:'#1f7ac4', weight:0.6, opacity:0.24,
-              fillColor:'#1f7ac4', fillOpacity:0.03 },
-      interactive:false,
-    }).addTo(map);
+    S.dongGeo = gj;
+    layers.dong = L.geoJSON(gj, { style:dongStyle, interactive:false }).addTo(map);
     layers.dong.bringToBack();
   }).catch(e => console.warn('행정동 경계를 불러오지 못했습니다', e));
 } catch (e) {
   console.warn('지도를 만들지 못했습니다', e);
   map = null;
   showMapFallback('이 브라우저에서 지도를 표시할 수 없습니다.');
+}
+
+/* ───────────────── 지표면온도 열지도 ─────────────────
+   위성이 준 값을 판정에만 쓰고 화면에 안 보여 주면, 왜 이 코스가
+   나왔는지 알 길이 없다. 지도 모드를 둘로 나눠 눈으로 확인하게 한다.
+
+   순차형(sequential) 인코딩이라 색은 하나여야 한다 — 무지개를 쓰면
+   중간 단계의 순서가 사라진다. 파랑은 '차갑다'로 읽히므로 주황을
+   밝은 쪽에서 어두운 쪽으로 6단계. 검증기 통과값이다(단일 색상,
+   단조 명도, 단계 간격 0.06 이상, 표면 대비 2.03:1). */
+
+const LST_RAMP = ['#e29a64','#d47a33','#bb5c1d','#9c4514','#77330e','#522109'];
+
+function lstColor(c) {
+  const t = S.thermal;
+  if (c == null || !t) return null;
+  const { lo, hi } = t.range;
+  const i = Math.min(LST_RAMP.length - 1,
+                     Math.max(0, Math.floor((c - lo) / (hi - lo) * LST_RAMP.length)));
+  return LST_RAMP[i];
+}
+
+function dongStyle(f) {
+  const base = { color:'#1f7ac4', weight:0.6, opacity:0.24,
+                 fillColor:'#1f7ac4', fillOpacity:0.03 };
+  if (S.mapMode !== 'lst' || !S.thermal) return base;
+  const row = S.thermal.dong[f.properties.adm_cd];
+  const col = row ? lstColor(row.lst_c) : null;
+  return col
+    ? { color:'#fff', weight:0.5, opacity:0.5, fillColor:col, fillOpacity:0.78 }
+    : { color:'#fff', weight:0.5, opacity:0.35, fillColor:'#c9cdd2', fillOpacity:0.3 };
+}
+
+async function setMapMode(mode) {
+  S.mapMode = mode;
+  $$('.seg-map button').forEach(b => {
+    const on = b.dataset.map === mode;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  $('#legend-plan').hidden = mode === 'lst';
+  $('#legend-lst').hidden = mode !== 'lst';
+  document.body.classList.toggle('lst-on', mode === 'lst');
+
+  if (mode === 'lst' && !S.thermal) {
+    try {
+      const d = await getJSON('/api/thermal');
+      const vals = Object.values(d.dong).map(r => r.lst_c);
+      if (!vals.length) throw new Error('열지도 데이터가 비어 있습니다');
+      S.thermal = { dong:d.dong, meta:d.meta,
+                    range:{ lo:Math.min(...vals), hi:Math.max(...vals) } };
+      renderLstLegend();
+    } catch (e) {
+      toast('지표면온도 자료를 불러오지 못했습니다');
+      return setMapMode('plain');
+    }
+  }
+  if (layers.dong) {
+    layers.dong.setStyle(dongStyle);
+    layers.dong.eachLayer(l => {
+      l.options.interactive = mode === 'lst';
+      if (mode === 'lst') bindLstTip(l);
+      else l.unbindTooltip();
+    });
+  }
+}
+
+function bindLstTip(layer) {
+  const row = S.thermal.dong[layer.feature.properties.adm_cd];
+  const p = layer.feature.properties;
+  if (!row) return layer.bindTooltip(`${p.gu} ${p.dong}<br>자료 없음`, { sticky:true });
+  layer.bindTooltip(
+    `<b>${esc(p.gu)} ${esc(p.dong)}</b><br>지표면온도 ${row.lst_c}°C` +
+    ` <span class="tt-dim">(서울 상위 ${100 - row.lst_pct}%)</span><br>` +
+    `식생지수 ${row.ndvi ?? '—'}`, { sticky:true, className:'lst-tip' });
+}
+
+function renderLstLegend() {
+  const { lo, hi } = S.thermal.range;
+  $('#lst-ramp').innerHTML = LST_RAMP.map((c, i) => {
+    const a = lo + (hi - lo) * i / LST_RAMP.length;
+    const b = lo + (hi - lo) * (i + 1) / LST_RAMP.length;
+    return `<span style="background:${c}" title="${a.toFixed(1)}~${b.toFixed(1)}°C"></span>`;
+  }).join('');
+  $('#lst-lo').textContent = `${lo.toFixed(1)}°C`;
+  $('#lst-hi').textContent = `${hi.toFixed(1)}°C`;
+  const m = S.thermal.meta || {};
+  $('#lst-src').textContent =
+    `Landsat 8/9 · Sentinel-2 여름 한낮 합성 · 행정동 ${m.dong || 426}개`;
 }
 
 /* ───────────────────────── 통신 ───────────────────────── */
@@ -1006,6 +1093,7 @@ function bindUI() {
 
   $$('#tabs button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 
+  $$('.seg-map button').forEach(b => b.onclick = () => setMapMode(b.dataset.map));
   $('#ai-form').onsubmit = e => { e.preventDefault(); send(); };
   $('#ai-fab').onclick = () => aiOpen($('#ai-panel').hidden);
   document.addEventListener('keydown', e => {

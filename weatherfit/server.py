@@ -339,6 +339,14 @@ def plan(body: PlanIn):
     return out
 
 
+@app.get("/api/thermal")
+def thermal_map():
+    """행정동별 위성 지표면온도. 지도의 열지도 모드가 쓴다."""
+    from .remote import table
+    t = table()
+    return {"meta": t.get("meta", {}), "dong": t.get("dong", {})}
+
+
 @app.get("/api/routing")
 def routing_info(from_lat: float, from_lon: float, to_lat: float, to_lon: float):
     return router().best((from_lat, from_lon), (to_lat, to_lon))
