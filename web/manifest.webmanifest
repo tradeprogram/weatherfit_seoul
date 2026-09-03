@@ -1,7 +1,7 @@
 {
   "name": "웨더핏 서울 — WeatherFit Seoul",
   "short_name": "웨더핏 서울",
-  "description": "오늘 날씨에, 지금 열려 있는 곳만 골라 짜는 서울 반나절 코스",
+  "description": "오늘 날씨에, 트렌디하게, 지금 열려 있는 곳만 골라 짜는 서울 반나절 코스",
   "lang": "ko",
   "start_url": "./",
   "scope": "./",
