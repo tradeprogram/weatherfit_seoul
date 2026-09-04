@@ -418,6 +418,12 @@ function legOf(step) {
   return rec ? { mode:rec, ...(tv[rec] || {}) } : null;
 }
 
+/* 구간 줄은 '여기서 저기까지 몇 분'만 말한다.
+
+   노선명까지 적었더니 위 이동 카드와 글자 하나 안 틀리고 같아졌다.
+   대중교통 구간이 하나뿐이면 카드의 '🚇 대중교통 13분 · 1020 3정거장 실측'과
+   구간 줄이 완전히 겹친다. 노선은 카드에 한 번만 두고, 여기서는 이 구간이
+   몇 분인지만 말한다 — 그게 이 자리에만 있는 정보다. */
 function travelRow(step) {
   const leg = legOf(step);
   if (!leg || !leg.minutes) return '';
@@ -425,10 +431,13 @@ function travelRow(step) {
   const label = leg.mode === 'walk' ? '도보' : '대중교통';
   const how = { tmap:'TMAP 보행경로', odsay:'ODsay 대중교통',
                 naver:'네이버 경로', estimate:'직선거리 추정' }[leg.provider] || '';
-  const extra = leg.mode === 'transit' && leg.summary ? ` · ${esc(leg.summary)}` : '';
-  return `<li class="leg" title="${esc(how)}">
+  // 도보의 summary는 "TMAP 보행자 경로"처럼 방법 이름이라 how와 같은 말이
+  // 된다. 노선명이 담기는 대중교통에서만 덧붙인다.
+  const tip = [how, leg.mode === 'transit' && leg.exact ? leg.summary : '']
+    .filter(Boolean).join(' · ');
+  return `<li class="leg" title="${esc(tip)}">
     <span class="leg-line"></span>
-    <span class="leg-txt">${icon} ${label} ${leg.minutes}분${extra}
+    <span class="leg-txt">${icon} ${label} ${leg.minutes}분
       <em>${leg.exact ? '실측' : '추정'}</em></span></li>`;
 }
 
@@ -453,7 +462,11 @@ function renderMoveCard(c) {
     if (!a) return;
     a.n += 1; a.min += leg.minutes; a.m += leg.distance_m || 0;
     if (leg.exact) { a.exact += 1; a.how = leg.provider; }
-    if (leg.mode === 'transit' && leg.summary) a.lines.push(leg.summary);
+    // summary 한 필드가 노선명("1020 3정거장")과 추정 사유("평균 이동속도
+    // 기반 추정")를 겸하고 있다. 사유를 노선명 자리에 적으면 뒤의 '추정'
+    // 배지와 겹쳐 "평균 이동속도 기반 추정 추정"이 된다. 실측일 때만 쓴다.
+    if (leg.mode === 'transit' && leg.exact && leg.summary
+        && !a.lines.includes(leg.summary)) a.lines.push(leg.summary);
   });
 
   const HOW = { tmap:'TMAP 보행경로', osrm:'OSM 도로망', odsay:'ODsay 대중교통' };
