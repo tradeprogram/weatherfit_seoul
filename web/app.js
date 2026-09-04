@@ -13,7 +13,7 @@ const LS_VAULT = 'weatherfit.vault';
 const S = {
   lat:CITY_HALL[0], lon:CITY_HALL[1], accuracy:null, where:null, precise:false,
   mode:'auto', hours:4, at:null,
-  course:null, candidates:[], stats:null,
+  course:null, candidates:[], stats:null, candOpen:false,
   catFilter:null, selected:null, showAll:false,
   mapMode:'plain', thermal:null, dongGeo:null, styles:[],
   history:[], intent:null, busy:false,
@@ -286,6 +286,19 @@ function loadStyles() {
   catch (e) { S.styles = []; }
 }
 
+/* 조건을 접어 두면 무엇이 걸려 있는지 알 수 없다. 접힌 채로도
+   읽히도록 한 줄 요약을 머리글에 넣는다. */
+function condSummary() {
+  const h = S.hours + '시간';
+  const w = { auto: '실시간 날씨', clear: '맑음', rain: '비', heat: '폭염' }[S.mode];
+  const iv = (S.interests || []).length;
+  const st = (S.styles || []).length;
+  const bits = [h, w];
+  if (iv) bits.push(`관심사 ${iv}`);
+  if (st) bits.push(`스타일 ${st}`);
+  return bits.join(' · ');
+}
+
 function syncControls() {
   $$('#hours-seg button').forEach(b =>
     b.classList.toggle('on', +b.dataset.h === S.hours));
@@ -326,7 +339,7 @@ async function refresh() {
 }
 
 function setLoading(on) {
-  $('#pane-plan').classList.toggle('loading', on);
+  $('#sec-plan').classList.toggle('loading', on);
 }
 
 /* ───────────────────────── 취향 ───────────────────────── */
@@ -482,6 +495,8 @@ function renderMoveCard(c) {
 }
 
 function renderPlan() {
+  const cn = $('#cond-now');
+  if (cn) cn.textContent = condSummary();
   const c = S.course;
   const head = $('#plan-head'), tl = $('#timeline');
   const notes = $('#plan-notes'), backup = $('#backup');
@@ -525,6 +540,7 @@ function renderPlan() {
           · ${ROLE_NAME[s.role] || ''} · ${s.dwell_min}분
           ${s.hours_assumed ? '<span class="warn-tag">시간 미상</span>' : ''}</div>
         <div class="l">${esc(s.line)}</div>
+        ${whyChips(s.why)}
         <div class="stop-acts">
           <button data-act="like" data-cid="${esc(s.cid)}">👍 이런 곳 더</button>
           <button data-act="swap" data-cid="${esc(s.cid)}">↻ 다른 곳</button>
@@ -573,12 +589,32 @@ function filtered() {
 
 /* 트렌드 배지. 오르는 쪽만 보여 주면 '뜨는 곳만 있다'는 인상을 주는데,
    실제로는 식는 곳도 추천에 남는다 — 순위에 덜 반영할 뿐이다. 양쪽 다 적는다. */
+/* 숫자를 배지 안에 적는다. 툴팁에만 두면 손가락으로 보는 사람에게는
+   없는 것과 같고, 마우스로 봐도 올려 보기 전엔 알 수 없다. */
 function trendBadge(t) {
   if (!t) return '';
   const pct = Math.round(t.yoy * 100);
-  const tip = `작년 같은 달 대비 ${pct > 0 ? '+' : ''}${pct}% ` +
-              `(연 ${Number(t.level).toLocaleString()}회 조회)`;
-  return `<span class="badge trend ${esc(t.kind)}" title="${esc(tip)}">${esc(t.label)}</span>`;
+  const tip = `작년 같은 달 대비 ${pct > 0 ? '+' : ''}${pct}% · ` +
+              `연 ${Number(t.level).toLocaleString()}회 조회 (영어 위키백과)`;
+  return `<span class="badge trend ${esc(t.kind)}" title="${esc(tip)}">${
+    esc(t.label)}<em>${pct > 0 ? '+' : ''}${pct}%</em></span>`;
+}
+
+/* 왜 이곳이 뽑혔는지를 카드에 바로 적는다.
+   근거는 상세 패널을 열어야만 보였다 — 그 패널이 있는 줄 모르면 영영
+   못 본다. 기여가 큰 두 가지만 뽑아 목록에서 바로 읽히게 한다. */
+const WHY_INLINE = 2;
+
+function whyChips(why) {
+  if (!why || !why.parts) return '';
+  const top = why.parts
+    .filter(p => p.value > 0.35)
+    .sort((a, b) => b.value * b.weight - a.value * a.weight)
+    .slice(0, WHY_INLINE);
+  if (!top.length) return '';
+  return `<div class="why-chips">${top.map(p =>
+    `<span class="why-chip" title="${esc(p.note || '')}">${esc(p.label)}</span>`
+  ).join('')}</div>`;
 }
 
 function renderCandidates() {
@@ -593,10 +629,22 @@ function renderCandidates() {
   });
 
   const rows = filtered();
+  $('#list-n').textContent = rows.length ? ` ${rows.length.toLocaleString()}곳` : '';
+  $('#jump-list').textContent = rows.length.toLocaleString();
   $('#list-summary').textContent = S.where
-    ? `${S.where.label} 반경 2.5km · 지금 갈 수 있는 ${rows.length.toLocaleString()}곳`
-    : `지금 갈 수 있는 ${rows.length.toLocaleString()}곳`;
-  $('#cand-list').innerHTML = rows.slice(0, 120).map(c => `
+    ? `${S.where.label} 반경 2.5km · 지금 갈 수 있는 곳`
+    : '지금 갈 수 있는 곳';
+
+  // 한 칼럼이 되면서 이 목록이 길면 아래 '근거'가 영영 안 보인다.
+  // 처음엔 조금만 펴 두고 원하면 더 연다.
+  const cap = S.candOpen ? 120 : 12;
+  const more = $('#cand-more');
+  more.hidden = rows.length <= cap;
+  more.textContent = S.candOpen ? '접기'
+    : `${(rows.length - cap).toLocaleString()}곳 더 보기`;
+  more.onclick = () => { S.candOpen = !S.candOpen; renderCandidates(); };
+
+  $('#cand-list').innerHTML = rows.slice(0, cap).map(c => `
     <li data-cid="${esc(c.cid)}" class="${S.selected === c.cid ? 'sel' : ''}">
       <div class="t">${esc(c.title)}${trendBadge(c.trend)}</div>
       <div class="m">
@@ -931,7 +979,7 @@ function appendActions(box, actions) {
     b.textContent = a.label;
     b.onclick = () => {
       if (a.act === 'save') { savePlan(); return; }
-      if (a.tab) switchTab(a.tab);
+      if (a.tab) jumpTo('#sec-' + a.tab);
       aiOpen(false);
     };
     el.appendChild(b);
@@ -1145,19 +1193,33 @@ function toast(msg) {
   toast._t = setTimeout(() => el.classList.remove('on'), 2200);
 }
 
-function switchTab(name) {
-  $$('#tabs button').forEach(b => {
-    const on = b.dataset.tab === name;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
-  ['plan','list','evidence'].forEach(t => $('#pane-' + t).hidden = t !== name);
+/* 탭을 없앴다. 세 덩어리가 한 칼럼에 다 있고 여기는 그 위치로 굴러갈 뿐이다.
+   탭이었을 때는 '주변'과 '근거'가 눌러 보기 전엔 있는지도 알 수 없었다 —
+   특히 '근거'는 이 서비스가 왜 믿을 만한지를 담은 곳인데 아무도 안 열었다. */
+function jumpTo(id) {
+  const el = $(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* 지금 보고 있는 섹션을 바로가기에 표시한다. 한 칼럼이 되면
+   내가 어디쯤인지 알 방법이 사라지므로 그것만 되살린다. */
+function watchSections() {
+  const links = $$('#jump a');
+  const obs = new IntersectionObserver(es => {
+    es.forEach(e => {
+      if (!e.isIntersecting) return;
+      links.forEach(a => a.classList.toggle(
+        'on', a.getAttribute('href') === '#' + e.target.id));
+    });
+  }, { root: $('.panel-left'), rootMargin: '-20% 0px -70% 0px' });
+  ['sec-plan', 'sec-list', 'sec-evidence'].forEach(
+    id => { const el = $('#' + id); if (el) obs.observe(el); });
 }
 
 /* ───────────────────────── 시작 ───────────────────────── */
 
 async function start(usePrecise) {
-  $('#geo-overlay').hidden = true;
+  $('#geo-nudge').hidden = true;
   if (usePrecise) await locate();
   await refreshWhere();
   await refresh();
@@ -1195,7 +1257,10 @@ function bindUI() {
   }
 
   $('#geo-allow').onclick = () => start(true);
-  $('#geo-skip').onclick = () => start(false);
+  $('#geo-skip').onclick = () => { $('#geo-nudge').hidden = true; };
+  $$('#jump a').forEach(a => a.onclick = e => {
+    e.preventDefault(); jumpTo(a.getAttribute('href'));
+  });
   $('#where-chip').onclick = async () => {
     await locate();
     await refreshWhere();
@@ -1238,8 +1303,6 @@ function bindUI() {
     try { localStorage.setItem(LS_LANG, S.lang); } catch (e) { /* 무시 */ }
     refresh();
   });
-
-  $$('#tabs button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 
   $$('#styles button').forEach(b => b.onclick = e => {
     const on = e.currentTarget.classList.toggle('on');
@@ -1330,19 +1393,31 @@ function init() {
   syncLanguages();
   loadStyles();
   syncControls();
-  if (readUrlState()) {
-    applyUrlOptions();
-    $('#geo-overlay').hidden = true;
-    start(false);
-  }
+  watchSections();
+
+  const fromUrl = readUrlState();
+  if (fromUrl) applyUrlOptions();
+
   // 지난번 위치를 기억해 두면 재방문이 매끄럽다
+  let remembered = false;
   try {
     const saved = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
     if (saved?.lat) {
       S.lat = saved.lat; S.lon = saved.lon; S.precise = !!saved.precise;
+      remembered = true;
       geoNote('지난번 위치가 기억되어 있습니다.');
     }
   } catch (e) { /* 무시 */ }
+
+  // 묻기 전에 먼저 보여 준다.
+  //
+  // 예전에는 위치를 고를 때까지 화면 전체를 카드가 막았다. 처음 온 사람이
+  // 보는 것이 서비스가 아니라 질문이었고, 무엇을 해 주는 곳인지 모르는
+  // 채로 권한부터 정해야 했다. 서울시청 기준 일정을 먼저 완성해 두고,
+  // 위치는 화면 구석에서 권한다 — 안 눌러도 서비스는 이미 돌아간다.
+  start(false).then(() => {
+    if (!fromUrl && !remembered && !S.precise) $('#geo-nudge').hidden = false;
+  });
 }
 
 /* 서비스 워커 — 로밍 중에 앱 껍데기가 안 열리면 보관함의 일정도 못 본다.
