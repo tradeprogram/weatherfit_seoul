@@ -145,10 +145,40 @@ def suspect(a: dict | None) -> bool:
 
 
 def excess(a: dict | None) -> float:
-    """시장을 뺀 그 개체만의 전년비. 없으면 원값을 쓴다."""
+    """시장을 뺀 그 개체만의 전년비. 없으면 원값을 쓴다.
+
+    **무엇이 일어났는지**를 말하는 값이다. 판정(classify)과 화면 표시에 쓴다.
+    """
     if not a:
         return 0.0
     return a["rel"] if "rel" in a else a["yoy"]
+
+
+def shrink(yoy: float, level: float, typical: float) -> float:
+    """작은 기준선 위의 큰 비율을 그만큼 깎는다.
+
+    비율은 분모가 작을수록 쉽게 커진다. 떡박물관은 한 해 조회수가 800회인데
+    전년비 +98%다 — 늘어난 절대량은 400회다. 같은 표에서 광화문광장은
+    +186%에 42,975회다. 둘을 같은 자로 재서 순위를 매기면 잡음이 신호를
+    이긴다.
+
+    그래서 그 소스의 전형적인 크기(중앙값)를 기준으로 비율을 당긴다.
+
+        조정 = 전년비 × 수준 / (수준 + 중앙값)
+
+    중앙값만 한 곳은 절반으로, 열 배인 곳은 91%가 남고, 중앙값의 5분의
+    1인 곳은 6분의 1만 남는다. 떡박물관 +98% → +15%, 광화문광장 +186% →
+    +169%, 경복궁은 사실상 그대로다.
+
+    상수를 손으로 고르지 않는 것이 중요하다. 중앙값은 소스가 정하므로
+    조회수든 소비액이든 방문객이든 같은 코드가 그대로 돈다.
+
+    **얼마나 믿을 만한지**를 말하는 값이다. 순위에만 쓰고 판정에는 쓰지
+    않는다 — 작은 곳이 실제로 두 배가 된 것을 '꾸준함'이라 적으면 거짓말이다.
+    """
+    if level <= 0 or typical <= 0:
+        return yoy
+    return yoy * level / (level + typical)
 
 
 LABEL = {
@@ -188,6 +218,16 @@ def classify(a: dict | None) -> str:
     return "steady"
 
 
+def _damped(a: dict) -> float:
+    """순위에 쓰는 모멘텀. 하락은 절반만 반영한다.
+
+    `a.get("adj", excess(a))`로 쓰면 안 된다. 기본값이 먼저 계산되므로
+    adj가 있어도 excess를 부르고, 그 안에서 없는 키를 찾다 터진다.
+    """
+    v = a["adj"] if "adj" in a else excess(a)
+    return v if v >= 0 else v * DOWN_DAMP
+
+
 def score(a: dict, max_log: float) -> dict:
     """세 축을 0~1로 옮긴다. 합치지 않는다 — 뜻이 다른 값이다.
 
@@ -199,12 +239,25 @@ def score(a: dict, max_log: float) -> dict:
         "level": round(max(0.0, min(1.0, lv)), 3),
         # 전년비는 ±50%를 양 끝으로 본다. 두 배로 뛰는 곳은 드물고,
         # 드문 것에 눈금을 맞추면 나머지가 전부 가운데로 뭉친다.
-        "momentum": round(max(0.0, min(1.0, (excess(a) + 0.5) / 1.0)), 3),
+        # 오르는 신호와 내리는 신호를 같은 무게로 두지 않는다.
+        #
+        # 관심이 늘었다는 것은 새로 알아보는 사람이 늘었다는 뜻 하나뿐이다.
+        # 그런데 관심이 줄었다는 것은 두 가지일 수 있다 — 정말로 시들거나,
+        # 너무 유명해져서 더 찾아볼 필요가 없거나. 실측이 그렇게 말한다.
+        # 북촌한옥마을은 조회수가 40.8% 줄었는데 서울AI재단 유동인구로는
+        # 외국인 방문이 10.5% 늘었고, DDP도 조회수는 -30%인데 방문은
+        # +12.1%로 16개 관광지 중 1위였다.
+        #
+        # 그래서 하락 쪽만 절반으로 줄인다. 올릴 때는 아는 만큼 올리고,
+        # 내릴 때는 모르는 만큼 덜 내린다. 판정 라벨('식는 중')은 그대로
+        # 두므로 화면에는 사실대로 나오고, 순위만 덜 움직인다.
+        "momentum": round(max(0.0, min(1.0, (_damped(a) + 0.5) / 1.0)), 3),
         "surge": round(max(0.0, min(1.0, (a["surge"] + 2.0) / 4.0)), 3),
     }
 
 
 DIVERGE_MIN = 0.30     # 전년비가 이만큼 어긋나면 볼 만하다
+DOWN_DAMP = 0.5        # 내려가는 신호는 절반만 믿는다. 아래 설명 참조.
 
 
 def divergence(a: dict, b: dict) -> dict:
@@ -489,10 +542,17 @@ def _finish(rows: dict) -> float:
     market = market_adjust(have)
     for a in have:
         a.pop("rel", None)
+        a.pop("adj", None)
         if len(have) >= MARKET_MIN:
             a["rel"] = round(a["yoy"] - market, 4)
     for r in rows.values():
         r["trend"] = classify(r.get("axes"))       # 조정값으로 다시 판정한다
+
+    # 기준선이 작은 곳의 비율을 그만큼 깎는다. 순위에만 쓰는 값이다.
+    lv = sorted(a["level"] for a in have if a["level"] > 0)
+    typical = lv[len(lv) // 2] if lv else 0.0
+    for a in have:
+        a["adj"] = round(shrink(excess(a), a["level"], typical), 4)
 
     # 정규화는 소스 **안에서만** 한다. 단위가 다른 값을 한 자로 재면 안 된다.
     max_log = max((math.log1p(max(a["level"], 0)) for a in have),
@@ -502,6 +562,12 @@ def _finish(rows: dict) -> float:
         if r.get("axes"):
             r["score"] = score(r["axes"], max_log)
     return market
+
+
+def _typical(rows: dict) -> float:
+    lv = sorted(r["axes"]["level"] for r in rows.values()
+                if r.get("axes") and r["axes"]["level"] > 0)
+    return lv[len(lv) // 2] if lv else 0.0
 
 
 def recompute(name: str, verbose: bool = True) -> Path:
@@ -514,6 +580,7 @@ def recompute(name: str, verbose: bool = True) -> Path:
     market = _finish(rows)
     have = [r for r in rows.values() if r.get("axes")]
     t["meta"].update({"market": round(market, 4),
+                      "typical": _typical(rows),
                       "market_adjusted": len(have) >= MARKET_MIN,
                       "recomputed_at": time.strftime("%Y-%m-%dT%H:%M:%S",
                                                      time.gmtime())})

@@ -657,8 +657,10 @@ function whyBlock(c) {
     </div>`;
   }).join('');
   return `<div class="d-sec"><h4>선정 근거</h4>${rows}
-    <p class="why-foot">거리·정보 충실도·알려진 정도·취향을 섞어 고릅니다.
-      어느 하나가 전부를 결정하지 않습니다.</p></div>`;
+    <p class="why-foot">거리·정보 충실도·알려진 정도·요즘 뜨는 정도·취향을
+      섞어 고릅니다. 어느 하나가 전부를 결정하지 않습니다.<br>
+      &lsquo;요즘 뜨는&rsquo;은 작년 같은 달과 견준 관심의 변화입니다 &mdash;
+      방문객 수가 아니라 새로 찾아보는 사람의 수입니다.</p></div>`;
 }
 
 function renderDetail(c) {

@@ -406,3 +406,77 @@ class TestSuspect:
         for unit_base in (52000.0, 7.23, 4.31, 1.7e8):
             v = flat(12, unit_base * 0.01) + flat(12, unit_base)
             assert suspect(axes(v))
+
+
+class TestRankingValue:
+    """순위에 쓰는 값과 화면에 적는 값은 다르다."""
+
+    def test_작은_기준선의_큰_비율은_깎인다(self):
+        """떡박물관은 한 해 800회에 +98%다. 늘어난 절대량은 400회다.
+        같은 표의 광화문광장은 42,975회에 +186%다. 둘을 같은 자로 재면
+        잡음이 신호를 이긴다."""
+        from weatherfit.momentum import shrink
+
+        typical = 4312.0
+        small = shrink(0.982, 800.0, typical)
+        big = shrink(1.859, 42975.0, typical)
+        assert small < 0.20              # +98% → +15%쯤
+        assert big > 1.60                # +186% → +169%쯤
+
+    def test_중앙값짜리는_절반으로_당겨진다(self):
+        from weatherfit.momentum import shrink
+
+        assert shrink(1.0, 4312.0, 4312.0) == pytest.approx(0.5)
+
+    def test_상수를_손으로_고르지_않는다(self):
+        """기준은 그 소스의 중앙값이다. 조회수든 소비액이든 같은 코드가
+        돈다 — 이게 소스를 갈아 끼울 수 있는 조건이다."""
+        from weatherfit.momentum import shrink
+
+        views = shrink(0.5, 40000.0, 4312.0)
+        spend = shrink(0.5, 40000.0 * 1e-4, 4312.0 * 1e-4)
+        assert views == pytest.approx(spend)
+
+    def test_하락은_절반만_반영한다(self):
+        """관심이 늘었다는 건 새로 알아보는 사람이 늘었다는 뜻 하나지만,
+        줄었다는 건 시들었거나 너무 유명해졌거나 둘 중 하나다. 북촌한옥마을은
+        조회수 -40.8%인데 실측 외국인 방문은 +10.5%였다."""
+        from weatherfit.momentum import _damped
+
+        assert _damped({"adj": 0.4}) == pytest.approx(0.4)
+        assert _damped({"adj": -0.4}) == pytest.approx(-0.2)
+
+    def test_깎아도_판정_라벨은_사실대로_남는다(self):
+        """순위만 덜 움직이고, 화면에는 '식는 중'이라고 그대로 적는다."""
+        a = {"yoy": -0.44, "rel": -0.44, "adj": -0.40, "surge": 0.0,
+             "level": 39059.0}
+        assert classify(a) == "fading"
+        assert score(a, 12.0)["momentum"] > 0.25   # 0.06이 아니다
+
+
+class TestRankingWiring:
+    def test_가중치의_합이_1이다(self):
+        from weatherfit import quality as q
+
+        total = (q.W_NEAR + q.W_QUALITY + q.W_POPULAR + q.W_MOMENTUM
+                 + q.W_TASTE + q.W_STYLE)
+        assert total == pytest.approx(1.0)
+
+    def test_자료가_없으면_중립이다(self):
+        """위키 문서가 없는 곳이 대부분이다. 0을 주면 '안 뜬다'고 말하는
+        셈이고, 그건 모르는 것을 아는 척하는 일이다."""
+        from weatherfit import quality as q
+
+        class P:
+            cid = "없는cid"
+
+        value, note = q._momentum_of(P())
+        assert value == q.MOMENTUM_UNKNOWN == 0.5
+        assert "없음" in note
+
+    def test_인기와_모멘텀은_따로_센다(self):
+        """하나로 합치면 경복궁이 늘 이긴다 — 크기가 압도적이라 변화가
+        묻힌다. 그런데 크기는 다들 아는 사실이라 정보가 없다."""
+        from weatherfit import quality as q
+
+        assert q.W_POPULAR > 0 and q.W_MOMENTUM > 0

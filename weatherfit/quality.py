@@ -114,11 +114,20 @@ class Diversity:
 
 
 # 점수 배분. 합이 1이 되게 유지한다.
-W_NEAR = 0.28      # 가까운가
-W_QUALITY = 0.22   # 콘텐츠가 충실한가
-W_POPULAR = 0.20   # 실제로 알려진 곳인가 (위키 조회수 등)
-W_TASTE = 0.15     # 이 사용자의 취향인가 (좋아요·관심없음으로 학습)
-W_TREND = 0.15     # 이 사람이 말한 여행 스타일에 맞는가 (VITALITY 5축)
+W_NEAR = 0.26      # 가까운가
+W_QUALITY = 0.20   # 콘텐츠가 충실한가
+W_POPULAR = 0.16   # 실제로 알려진 곳인가 — 지금의 크기 (위키 조회수 등)
+W_MOMENTUM = 0.12  # 그 크기가 커지고 있는가 — 지금의 변화
+W_TASTE = 0.14     # 이 사용자의 취향인가 (좋아요·관심없음으로 학습)
+W_STYLE = 0.12     # 이 사람이 말한 여행 스타일에 맞는가 (VITALITY 5축)
+
+# 인기와 모멘텀을 갈라 놓는 것이 요점이다. 하나로 합치면 경복궁이 늘
+# 이긴다 — 크기가 압도적이라 변화가 묻힌다. 그런데 크기는 이미 다들 아는
+# 사실이라 정보가 없고, 정보는 변화 쪽에 있다. 그렇다고 변화만 보면
+# 조회수 800회짜리가 42,975회짜리를 이긴다. 그래서 둘을 나란히 두되
+# 변화 쪽은 기준선 크기로 미리 깎아 둔다(momentum.shrink).
+
+MOMENTUM_UNKNOWN = 0.5   # 자료가 없으면 중립. 0은 '안 뜬다'는 뜻이 된다.
 
 
 def popular_note(place: Place) -> str:
@@ -155,6 +164,7 @@ def explain(place: Place, origin, taste=None, pop: dict | None = None,
     if estimated:
         popular = q * 0.6
     aff = taste.affinity(place) if taste is not None else 0.0
+    mom, mom_note = _momentum_of(place)
 
     parts = [
         {"key": "near", "label": "가까움", "value": round(near, 2),
@@ -165,6 +175,8 @@ def explain(place: Place, origin, taste=None, pop: dict | None = None,
         {"key": "popular", "label": "알려진 곳", "value": round(popular, 2),
          "weight": W_POPULAR,
          "note": popular_note(place)},
+        {"key": "momentum", "label": "요즘 뜨는", "value": round(mom, 2),
+         "weight": W_MOMENTUM, "note": mom_note},
     ]
     if taste is not None and not taste.is_empty:
         parts.append({"key": "taste", "label": "취향 일치",
@@ -173,10 +185,29 @@ def explain(place: Place, origin, taste=None, pop: dict | None = None,
     fit = _trend_fit(place, profile)
     if fit is not None:
         parts.append({"key": "trend", "label": "여행 스타일",
-                      "value": fit, "weight": W_TREND,
+                      "value": fit, "weight": W_STYLE,
                       "note": _trend_note(place, profile)})
     total = sum(p["value"] * p["weight"] for p in parts)
     return {"score": round(total, 3), "parts": parts}
+
+
+def _momentum_of(place) -> tuple[float, str]:
+    """'요즘 뜨는가'를 0~1과 한 줄 설명으로.
+
+    자료가 없으면 0이 아니라 중립을 준다. 위키 문서가 없는 곳이 대부분인데
+    0을 주면 '안 뜬다'고 말하는 셈이고, 그건 우리가 모르는 것을 아는 척하는
+    일이다.
+    """
+    from .momentum import LABEL, excess, of
+
+    row = of(place.cid)
+    if not row:
+        return MOMENTUM_UNKNOWN, "추이 자료 없음 — 순위에 영향 없음"
+    a = row["axes"]
+    label = LABEL.get(row["trend"], "")
+    return row["score"]["momentum"], (
+        f"{label} · 작년 같은 달 대비 {excess(a) * 100:+.0f}% "
+        f"(연 {a['level']:,.0f}회)")
 
 
 def _trend_note(place, profile) -> str:
@@ -220,14 +251,15 @@ def _trend_fit(place, profile) -> float | None:
 
 def rank(cands, origin, taste=None, pop: dict | None = None,
          dist: dict | None = None, profile=None):
-    """거리 · 품질 · 인기 · 취향을 합쳐 정렬한다.
+    """거리 · 품질 · 인기 · 모멘텀 · 취향을 합쳐 정렬한다.
 
     dist가 주어지면 그 값(실제 보행 거리)을 쓰고, 없으면 직선거리로 잰다.
     직선거리는 한강 건너편이나 철길 반대편을 '가까운 곳'으로 올려 보낸다.
 
     거리만 보면 약국이 오고, 품질만 보면 반대편 동네 명소가 온다.
     인기만 보면 유명한 곳만 돌게 되고, 취향만 보면 늘 같은 것만 본다.
-    네 가지를 섞되 어느 하나가 전부를 결정하지 않게 한다.
+    모멘텀만 보면 작년에 아무도 안 가던 곳이 온다.
+    다섯 가지를 섞되 어느 하나가 전부를 결정하지 않게 한다.
 
     2km를 거리 점수 0점의 기준으로 삼는다 — 도보와 짧은 대중교통의 범위다.
     """
@@ -252,13 +284,15 @@ def rank(cands, origin, taste=None, pop: dict | None = None,
             popular = q * 0.6
 
         aff = taste.affinity(p) if taste is not None else 0.0
+        mom, _ = _momentum_of(p)
         score = (near * W_NEAR + q * W_QUALITY
-                 + popular * W_POPULAR + max(0.0, aff) * W_TASTE)
+                 + popular * W_POPULAR + mom * W_MOMENTUM
+                 + max(0.0, aff) * W_TASTE)
         if aff < 0:
             score += aff * W_TASTE        # 싫어하는 쪽은 감점
         fit = _trend_fit(p, profile)
         if fit is not None:
-            score += fit * W_TREND
+            score += fit * W_STYLE
         scored.append((score, item))
     scored.sort(key=lambda t: -t[0])
     return [t[1] for t in scored]
