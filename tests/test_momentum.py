@@ -480,3 +480,66 @@ class TestRankingWiring:
         from weatherfit import quality as q
 
         assert q.W_POPULAR > 0 and q.W_MOMENTUM > 0
+
+
+class TestBadge:
+    """카드에 붙는 한 줄. 화면에 나가는 값이라 조용히 틀리면 안 된다."""
+
+    def setup_method(self):
+        from weatherfit import momentum as m
+        m._cache["시험"] = {"meta": {}, "series": {
+            "오름": {"label": "광화문광장", "trend": "rising",
+                    "axes": {"yoy": 1.86, "rel": 1.859, "level": 42975.0},
+                    "score": {"momentum": 1.0}},
+            "내림": {"label": "북촌한옥마을", "trend": "fading",
+                    "axes": {"yoy": -0.44, "rel": -0.441, "level": 39059.0},
+                    "score": {"momentum": 0.28}},
+            "평": {"label": "경복궁", "trend": "steady",
+                  "axes": {"yoy": -0.01, "rel": -0.014, "level": 208507.0},
+                  "score": {"momentum": 0.49}},
+            "흔들": {"label": "남산서울타워", "trend": "suspect",
+                    "axes": {"yoy": 26.25, "level": 7876.0},
+                    "score": {"momentum": 1.0}},
+        }}
+
+    def teardown_method(self):
+        from weatherfit import momentum as m
+        m._cache.pop("시험", None)
+
+    def test_오르는_곳에_붙는다(self):
+        from weatherfit.momentum import badge
+
+        b = badge("오름", "시험")
+        assert b["kind"] == "rising" and b["label"] == "뜨는 중"
+        assert b["yoy"] == pytest.approx(1.859)
+
+    def test_식는_곳도_숨기지_않는다(self):
+        """추천에서 뺀 것이 아니라 순위에 덜 반영했을 뿐이다. 화면에
+        안 적으면 '뜨는 곳만 있다'는 인상을 준다."""
+        from weatherfit.momentum import badge
+
+        assert badge("내림", "시험")["label"] == "식는 중"
+
+    def test_꾸준한_곳에는_안_붙인다(self):
+        """경복궁이 '꾸준함'인 건 맞지만 알려 줄 것이 없다."""
+        from weatherfit.momentum import badge
+
+        assert badge("평", "시험") is None
+
+    def test_자료_사정은_사용자에게_안_보인다(self):
+        """'기준 흔들림'은 우리 쪽 문제지 그 장소의 성질이 아니다."""
+        from weatherfit.momentum import badge
+
+        assert badge("흔들", "시험") is None
+
+    def test_모르는_곳은_None(self):
+        from weatherfit.momentum import badge
+
+        assert badge("없는cid", "시험") is None
+
+    def test_시장을_뺀_값을_내보낸다(self):
+        """화면에 원값을 적으면 판정과 숫자가 어긋나 보인다 — 운현궁이
+        '-22.8%인데 뜨는 중'으로 나오는 식이다."""
+        from weatherfit.momentum import badge
+
+        assert badge("내림", "시험")["yoy"] != -0.44

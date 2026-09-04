@@ -519,7 +519,8 @@ function renderPlan() {
       <div class="when">${s.arrive}<small>${s.depart}</small></div>
       <div class="body">
         <div class="t">${esc(s.title)}
-          ${s.ends_today ? '<span class="badge today">오늘 마지막</span>' : ''}</div>
+          ${s.ends_today ? '<span class="badge today">오늘 마지막</span>' : ''}
+          ${trendBadge(s.trend)}</div>
         <div class="m">${esc(s.category_path || s.category)}
           · ${ROLE_NAME[s.role] || ''} · ${s.dwell_min}분
           ${s.hours_assumed ? '<span class="warn-tag">시간 미상</span>' : ''}</div>
@@ -570,6 +571,16 @@ function filtered() {
                      : S.candidates;
 }
 
+/* 트렌드 배지. 오르는 쪽만 보여 주면 '뜨는 곳만 있다'는 인상을 주는데,
+   실제로는 식는 곳도 추천에 남는다 — 순위에 덜 반영할 뿐이다. 양쪽 다 적는다. */
+function trendBadge(t) {
+  if (!t) return '';
+  const pct = Math.round(t.yoy * 100);
+  const tip = `작년 같은 달 대비 ${pct > 0 ? '+' : ''}${pct}% ` +
+              `(연 ${Number(t.level).toLocaleString()}회 조회)`;
+  return `<span class="badge trend ${esc(t.kind)}" title="${esc(tip)}">${esc(t.label)}</span>`;
+}
+
 function renderCandidates() {
   const cats = [...new Set(S.candidates.map(c => c.category).filter(Boolean))];
   $('#cat-filters').innerHTML =
@@ -587,7 +598,7 @@ function renderCandidates() {
     : `지금 갈 수 있는 ${rows.length.toLocaleString()}곳`;
   $('#cand-list').innerHTML = rows.slice(0, 120).map(c => `
     <li data-cid="${esc(c.cid)}" class="${S.selected === c.cid ? 'sel' : ''}">
-      <div class="t">${esc(c.title)}</div>
+      <div class="t">${esc(c.title)}${trendBadge(c.trend)}</div>
       <div class="m">
         <span>${esc(c.category)}</span>
         <span class="n">${c.distance_m < 1000 ? c.distance_m + 'm'

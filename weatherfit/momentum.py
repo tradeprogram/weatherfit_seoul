@@ -656,6 +656,27 @@ def of(entity: str, name: str = "wikipedia") -> dict | None:
     return row if row and row.get("score") else None
 
 
+# 배지로 만들 만한 것만 고른다. '꾸준함'은 알려 줄 것이 없고,
+# '기준 흔들림'은 우리 쪽 자료 사정이라 사용자가 알 바 아니다.
+BADGE = ("rising", "spike", "peaked", "fading")
+
+
+def badge(entity: str, name: str = "wikipedia") -> dict | None:
+    """카드에 붙일 한 줄. 볼 것이 없으면 None.
+
+    내려가는 쪽('식는 중')도 숨기지 않는다. 이 서비스는 무엇이 실측이고
+    무엇이 추정인지 밝히는 것을 원칙으로 삼았고, 트렌드도 같다. 다만
+    추천에서 뺀 것이 아니라 순위에 덜 반영했을 뿐이므로, 화면에서도
+    경고가 아니라 사실로 보이게 둔다.
+    """
+    row = of(entity, name)
+    if not row or row["trend"] not in BADGE:
+        return None
+    return {"kind": row["trend"], "label": LABEL[row["trend"]],
+            "yoy": round(excess(row["axes"]), 3),
+            "level": row["axes"]["level"]}
+
+
 def compare(entity: str, a: str, b: str) -> dict | None:
     """두 소스가 같은 개체를 두고 하는 말을 나란히 놓는다."""
     ra, rb = of(entity, a), of(entity, b)

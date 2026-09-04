@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .chat import LANDMARKS, Intent, compose_reply, parse_intent
+from .momentum import badge as trend_badge
 from .popularity import scores as popularity_scores
 from .taste import PARTY_AVOID, PARTY_TAGS, Taste, mood_interests
 from .agent import compose, run_agent
@@ -208,6 +209,7 @@ def _row(p, verdict, detail, lat, lon, lang: str = "ko") -> dict:
         "environment": detail["environment"],
         "hours_confidence": detail["hours_confidence"],
         "popularity": round(popularity_scores().get(c.cid, 0.0), 3),
+        "trend": trend_badge(c.cid),
         "distance_m": round(d), "walk_min": max(1, round(d * 1.3 / 67)),
     }
 

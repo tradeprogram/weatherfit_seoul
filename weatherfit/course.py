@@ -86,8 +86,15 @@ class Step:
             "walk_min": (self.travel or {}).get("walk", {}).get("minutes"),
             "ends_today": self.ends_today,
             "hours_assumed": self.hours_assumed,
+            "trend": _trend_badge(i.cid),
             "why": self.why,
         }
+
+
+def _trend_badge(cid: str) -> dict | None:
+    """카드에 붙일 트렌드 한 줄. 상세 패널의 '선정 근거'와 같은 자료다."""
+    from .momentum import badge
+    return badge(cid)
 
 
 @dataclass

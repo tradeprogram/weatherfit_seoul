@@ -241,6 +241,14 @@ input:focus,select:focus{background:#fff}
 .badge.today{background:#fdeee0;color:#c26a1c}
 .badge.indoor{background:#efeafc;color:#5f45bb}
 
+/* 트렌드. 오르는 쪽은 눈에 들어오게, 내려가는 쪽은 사실로만 —
+   추천에서 뺀 것이 아니라 순위에 덜 반영했을 뿐이라 경고로 보이면 안 된다. */
+.badge.trend{cursor:help}
+.badge.trend.rising{background:#e4f5ea;color:#1d7a45}
+.badge.trend.spike{background:#e6f0fd;color:#1f5fb8}
+.badge.trend.peaked{background:#f2f0ea;color:#7a6f53}
+.badge.trend.fading{background:#f1f1f3;color:#6d6d78}
+
 .notes{margin-top:10px}
 .notes div{font-size:11.5px;color:var(--ink-2);line-height:1.55;
   background:rgba(255,255,255,.72);border:1px solid var(--line);
