@@ -6,12 +6,11 @@
   --sky-2:#eaf4fb;
   --sky-3:#fff6ec;
 
-  /* 유리 — 예전엔 .68이라 지도 무늬가 글자 뒤로 비쳤다. 읽는 면은
-     불투명에 가깝게 두고, 유리 느낌은 가장자리와 그림자로만 남긴다. */
-  --glass:rgba(255,255,255,.93);
-  --glass-strong:rgba(255,255,255,.97);
-  --glass-line:rgba(255,255,255,.9);
-  --glass-edge:rgba(96,128,160,.22);
+  /* 유리 */
+  --glass:rgba(255,255,255,.68);
+  --glass-strong:rgba(255,255,255,.88);
+  --glass-line:rgba(255,255,255,.75);
+  --glass-edge:rgba(120,150,180,.20);
   --shadow-sm:0 2px 8px rgba(31,63,94,.07);
   --shadow:0 8px 28px -10px rgba(31,63,94,.22), 0 2px 6px rgba(31,63,94,.06);
   --shadow-lg:0 20px 48px -18px rgba(31,63,94,.32), 0 3px 10px rgba(31,63,94,.08);
@@ -23,10 +22,8 @@
   --line:rgba(22,40,58,.10);
 
   /* 역할 색 */
-  --primary:#1263ab;
-  --primary-soft:#e6f0fa;
-  --surface:#fff;
-  --surface-2:#f4f7fa;   /* 눌러도 되는 것과 그냥 글인 것을 가른다 */
+  --primary:#1f7ac4;
+  --primary-soft:#e3f0fb;
   --anchor:#f08a34;
   --food:#22a06b;
   --shelter:#7c62d8;
@@ -37,7 +34,6 @@
   --mono:ui-monospace,"SFMono-Regular",Consolas,monospace;
 
   --pad:16px;
-  --r-lg:18px; --r:12px; --r-sm:9px;
   /* 아래 요소들이 상단 바를 피해 내려오는 기준.
      두 덩어리의 높이가 다르므로 '더 큰 쪽'(로고 카드)에 맞춘다.
      여기를 짧은 쪽에 맞추면 로고 카드가 패널과 지도 버튼을 덮는다. */
@@ -70,11 +66,11 @@ button{cursor:pointer;border:0;background:none}
 /* ───────── 유리 ───────── */
 .glass{
   background:var(--glass);
-  -webkit-backdrop-filter:blur(14px) saturate(140%);
-  backdrop-filter:blur(14px) saturate(140%);
+  -webkit-backdrop-filter:blur(18px) saturate(165%);
+  backdrop-filter:blur(18px) saturate(165%);
   border:1px solid var(--glass-edge);
   box-shadow:var(--shadow), inset 0 1px 0 var(--glass-line);
-  border-radius:var(--r-lg);
+  border-radius:16px;
 }
 
 /* ───────── 상단 바 ───────── */
@@ -140,67 +136,25 @@ button{cursor:pointer;border:0;background:none}
   bottom:var(--pad);width:var(--left-w);display:flex;flex-direction:column;
   overflow:hidden;box-shadow:var(--shadow-lg), inset 0 1px 0 var(--glass-line);
 }
-/* 왼쪽 패널은 통째로 굴러간다. 바로가기만 위에 붙어 따라온다. */
-.panel-left{overflow-y:auto;scroll-behavior:smooth;display:block}
-.jump{position:sticky;top:0;z-index:2;
-  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
 .panel[hidden]{display:none}
 .panel-left{left:var(--pad)}
 .panel-right{right:var(--pad);width:var(--right-w);padding:18px 20px;
   overflow-y:auto;background:var(--glass-strong)}
 
-/* ═════════ 한 칼럼 ═════════
-   탭이었을 때는 '주변'과 '근거'가 눌러 보기 전엔 있는지도 알 수 없었다.
-   이제 셋이 한 칼럼에 이어 붙고, 아래 바로가기는 감추지 않고 굴러갈 뿐이다. */
-.jump{
-  display:flex;gap:4px;padding:9px 12px;flex:0 0 auto;
-  border-bottom:1px solid var(--line);background:rgba(255,255,255,.45);
+.tabs{display:flex;gap:2px;padding:10px 10px 0;flex:0 0 auto}
+.tabs button{
+  flex:1;padding:8px 4px 9px;font-size:12.5px;color:var(--ink-3);
+  border-radius:9px 9px 0 0;position:relative;
 }
-.jump a{
-  flex:1;text-align:center;padding:6px 4px;font-size:12px;text-decoration:none;
-  color:var(--ink-3);border-radius:8px;transition:background .14s,color .14s;
+.tabs button:hover{color:var(--ink-2)}
+.tabs button.on{color:var(--primary);font-weight:600;background:rgba(255,255,255,.55)}
+.tabs button.on::after{
+  content:"";position:absolute;left:22%;right:22%;bottom:0;height:2px;
+  background:var(--primary);border-radius:2px;
 }
-.jump a:hover{color:var(--ink-2);background:rgba(255,255,255,.7)}
-.jump a.on{color:var(--primary);font-weight:600;background:#fff;
-  box-shadow:var(--shadow-sm)}
-.jump a b{font-weight:600;font-variant-numeric:tabular-nums;opacity:.65}
-
-.panel-left>.sec:first-of-type{padding-top:14px}
-.sec{padding:20px 16px;scroll-margin-top:8px}
-.sec + .sec{border-top:1px solid var(--line)}
-.sec-h{
-  margin:0 0 4px;font-family:var(--round);font-size:15px;font-weight:400;
-  letter-spacing:-.01em;display:flex;align-items:baseline;gap:6px;
-}
-.sec-h span{font-size:12px;color:var(--ink-3);font-family:var(--sans)}
-.more{
-  width:100%;margin-top:8px;padding:9px;border-radius:11px;font-size:12px;
-  color:var(--ink-2);background:rgba(255,255,255,.6);
-  border:1px solid var(--glass-edge);
-}
-.more:hover{background:#fff}
-.more[hidden]{display:none}
-
-/* 조건 — 접어도 무엇이 걸려 있는지 한 줄로 읽힌다 */
-.cond{margin-bottom:16px}
-.cond>summary{
-  display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;
-  padding:9px 12px;border-radius:var(--r);background:var(--surface-2);
-  border:1px solid var(--glass-edge);font-size:12px;color:var(--ink-2);
-  transition:border-color .12s,background .12s;
-}
-.cond>summary:hover{border-color:var(--primary)}
-.cond-more::after{content:" ▾";opacity:.6}
-.cond[open] .cond-more::after{content:" ▴"}
-.cond>summary::-webkit-details-marker{display:none}
-.cond>summary:hover{background:#fff}
-.cond-now{flex:1;font-weight:500;color:var(--ink)}
-.cond-more{font-size:11px;color:var(--ink-3)}
-.cond:not([open]) .cond-more::before{content:"조건 바꾸기"}
-.cond[open] .cond-more::before{content:"접기"}
-.cond-more{font-size:0}
-.cond-more::before{font-size:11px}
-.cond .controls{margin-top:12px}
+.pane{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;
+  padding:14px 16px 16px;overflow-y:auto}
+.pane[hidden]{display:none}
 
 .hint{font-size:12px;color:var(--ink-3);line-height:1.55;margin:0 0 12px}
 .lbl{display:block;font-size:11px;color:var(--ink-3);margin-bottom:5px}
@@ -572,7 +526,7 @@ input:focus,select:focus{background:#fff}
 .backup b{display:block;font-size:13px}
 .backup small{display:block;font-size:11px;color:var(--ink-2);margin-top:2px}
 
-.sec.loading{opacity:.55;pointer-events:none;transition:opacity .15s}
+.pane.loading{opacity:.55;pointer-events:none;transition:opacity .15s}
 
 .d-when{font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:10px;
   background:var(--primary-soft);color:#155d97;margin-bottom:12px;
@@ -848,97 +802,3 @@ body.lst-on .leaflet-layer.basemap{filter:saturate(.12) brightness(1.16) contras
   border-radius:999px}
 .move-tag.exact{background:rgba(34,160,107,.14);color:#1a7a52}
 .move-tag.est{background:rgba(240,138,52,.16);color:#b56a1e}
-
-
-/* ═════════ 개편에서 새로 생긴 것들 ═════════ */
-
-/* 위치 권유 — 화면을 막지 않는다. 안 눌러도 서비스는 이미 돌아간다.
-   지도 위에 띄웠더니 범례를 덮었고, 무엇보다 '서울시청 기준'은 일정에
-   대한 말이라 일정 옆에 있는 편이 읽힌다. */
-.nudge{
-  margin:0 0 12px;padding:10px 12px;border-radius:var(--r);
-  display:flex;align-items:center;gap:9px;
-  background:#fff7ec;border:1px solid rgba(240,138,52,.28);
-}
-.nudge[hidden]{display:none}
-.nudge-mark{font-size:17px;flex:0 0 auto}
-.nudge p{margin:0;font-size:12px;color:var(--ink-2);line-height:1.6;flex:1}
-.nudge .primary{
-  flex:0 0 auto;padding:8px 13px;border-radius:10px;font-size:12px;
-  font-weight:600;background:var(--primary);color:#fff;
-}
-.nudge .primary:hover{filter:brightness(1.06)}
-.nudge .ghost{flex:0 0 auto;padding:6px 8px;color:var(--ink-3);font-size:13px}
-.nudge .ghost:hover{color:var(--ink)}
-.geo-note{margin:0 0 12px;font-size:11px;color:var(--ink-3);min-height:0}
-.geo-note:empty{display:none}
-
-/* 왜 뽑혔는지 — 상세를 열지 않아도 카드에서 읽힌다 */
-.why-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
-.why-chip{
-  font-size:10.5px;padding:2px 7px;border-radius:6px;cursor:help;
-  background:rgba(31,122,196,.08);color:#2a6ea8;
-}
-
-/* 트렌드 배지 안의 숫자. 툴팁에만 두면 손가락으로 보는 사람에겐 없는 셈이다. */
-.badge.trend em{
-  font-style:normal;font-weight:700;margin-left:4px;opacity:.8;
-  font-variant-numeric:tabular-nums;
-}
-
-
-
-
-/* ═════════ 개편 · 눈에 보이는 위계 ═════════
-
-   문제는 기능이 없어서가 아니라 무엇이 눌러지는지 보이지 않아서였다.
-   유리가 너무 투명해 지도 무늬가 글자 뒤로 지나갔고, 모든 면이 같은
-   밝기라 제목·본문·버튼이 한 덩어리로 읽혔다. 값 대비를 세운다. */
-
-.panel-left{background:var(--glass-strong)}
-
-/* 섹션 머리글에 세로 획을 둔다. 스크롤 중에 어디가 경계인지 보이게. */
-.sec-h{position:relative;padding-left:11px;color:var(--ink)}
-.sec-h::before{
-  content:"";position:absolute;left:0;top:.34em;bottom:.22em;width:3px;
-  border-radius:2px;background:var(--primary);opacity:.8;
-}
-#sec-list .sec-h::before{background:var(--food)}
-#sec-evidence .sec-h::before{background:var(--ink-3)}
-
-/* 일정 카드 — 목록이 아니라 카드로 읽히게 */
-.timeline .stop{
-  background:var(--surface);border:1px solid var(--line);
-  border-radius:var(--r);box-shadow:var(--shadow-sm);
-}
-.timeline .stop.sel{
-  border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-soft);
-}
-.timeline .stop .t{font-size:13.5px;font-weight:600;letter-spacing:-.01em}
-
-/* 주변 목록 — 누를 수 있다는 것이 보이게 */
-.cand li{background:var(--surface-2);border:1px solid transparent;
-  transition:background .12s,border-color .12s,transform .12s}
-.cand li:hover{background:var(--surface);border-color:var(--glass-edge);
-  transform:translateX(2px)}
-
-/* 버튼 — 테두리를 줘서 글과 구분한다 */
-.plan-acts button,.filters button,.interests button{
-  border:1px solid var(--glass-edge);background:var(--surface-2);
-}
-.plan-acts button:hover,.filters button:hover,.interests button:hover{
-  background:var(--surface);border-color:var(--primary);color:var(--primary);
-}
-.interests button.on,.filters button.on{
-  background:var(--primary-soft);border-color:var(--primary);
-  color:var(--primary);font-weight:600;
-}
-
-/* 지도 조작 묶음 — 흩어져 있던 버튼을 한 덩어리로 */
-.map-ctl{gap:6px}
-.map-ctl>.glass{border-radius:var(--r);padding:7px 12px;font-size:12px;
-  background:var(--glass-strong)}
-.map-ctl>.glass.on{background:var(--primary);color:#fff;border-color:transparent}
-
-/* 상단 바 — 글자와 배경 대비를 올린다 */
-.topbar .glass{background:var(--glass-strong)}

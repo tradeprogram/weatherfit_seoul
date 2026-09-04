@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-title" content="웨더핏 서울">
 <meta name="description" content="오늘 날씨에, 트렌디하게, 지금 열려 있는 곳만 골라 짜는 서울 반나절 코스">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=74">
+<link rel="stylesheet" href="style.css?v=76">
 </head>
 <body>
 
@@ -61,20 +61,17 @@
 </header>
 
 <aside class="panel panel-left glass">
-  <nav class="jump" id="jump" aria-label="바로 가기">
-    <a href="#sec-plan">일정</a>
-    <a href="#sec-list">주변 <b id="jump-list">·</b></a>
-    <a href="#sec-evidence">근거</a>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="화면 전환">
+    <button data-tab="plan" class="on" role="tab" aria-selected="true"
+            aria-controls="pane-plan" id="tab-plan">일정</button>
+    <button data-tab="list" role="tab" aria-selected="false"
+            aria-controls="pane-list" id="tab-list">주변</button>
+    <button data-tab="evidence" role="tab" aria-selected="false"
+            aria-controls="pane-evidence" id="tab-evidence">근거</button>
   </nav>
 
   <!-- 일정 -->
-  <section class="sec" id="sec-plan">
-    <!-- 접어 둔다. 조건은 입력이고 일정은 결과인데, 입력이 일곱 줄을
-         차지하면 결과가 화면 밖으로 밀린다. 접힌 채로도 무엇이 걸려
-         있는지 요약이 보이고, 오른쪽에 '조건 바꾸기'라고 적혀 있다. -->
-    <details class="cond" id="cond">
-      <summary><span class="cond-now" id="cond-now">조건</span>
-        <span class="cond-more">접기</span></summary>
+  <section class="pane" id="pane-plan" role="tabpanel" aria-labelledby="tab-plan">
     <div class="controls">
       <div class="ctl">
         <span class="lbl">언제부터</span>
@@ -121,17 +118,6 @@
         </div>
       </div>
     </div>
-    </details>
-
-    <!-- 위치는 물어보되 화면을 막지 않는다. 일정을 먼저 완성해 두고 권한다. -->
-    <div class="nudge" id="geo-nudge" hidden>
-      <span class="nudge-mark">📍</span>
-      <p><b>서울시청 기준</b>으로 짠 일정입니다. 위치를 알려주시면
-        걸어갈 거리로 다시 짜 드려요.</p>
-      <button class="primary" id="geo-allow">내 위치로</button>
-      <button class="ghost" id="geo-skip" aria-label="닫기">✕</button>
-    </div>
-    <p class="geo-note" id="geo-note"></p>
 
     <div class="taste-bar" id="taste-bar" hidden>
       <span class="taste-txt" id="taste-txt"></span>
@@ -151,16 +137,16 @@
     <div class="notes" id="plan-notes" role="status"></div>
   </section>
 
-  <section class="sec" id="sec-list">
-    <h2 class="sec-h">주변에 갈 수 있는 곳<span id="list-n"></span></h2>
+
+  <!-- 주변 -->
+  <section class="pane" id="pane-list" role="tabpanel" aria-labelledby="tab-list" hidden>
     <p class="hint" id="list-summary"></p>
     <div class="filters" id="cat-filters"></div>
     <ul class="cand" id="cand-list"></ul>
-    <button class="more" id="cand-more" hidden></button>
   </section>
 
-  <section class="sec" id="sec-evidence">
-    <h2 class="sec-h">이 판단의 근거</h2>
+  <!-- 근거 -->
+  <section class="pane" id="pane-evidence" role="tabpanel" aria-labelledby="tab-evidence" hidden>
     <p class="hint">비짓서울 API 3,788건을 전수 수집해 측정한 값입니다.</p>
     <div id="evidence"></div>
   </section>
@@ -239,6 +225,22 @@
   <p class="legend-note" id="lst-src"></p>
 </div>
 
+<!-- 위치 요청 -->
+<div class="overlay" id="geo-overlay">
+  <div class="geo-card glass">
+    <span class="geo-mark">📍</span>
+    <h2>지금 계신 곳에서 시작합니다</h2>
+    <p>위치를 알려주시면 <b>걸어갈 수 있는 거리</b>에서 지금 열려 있는 곳만
+      골라 반나절 일정을 짜 드립니다. 위치는 브라우저 안에서만 쓰이고
+      어디에도 저장되지 않습니다.</p>
+    <div class="geo-actions">
+      <button class="primary" id="geo-allow">내 위치로 시작</button>
+      <button class="ghost" id="geo-skip">서울시청에서 시작</button>
+    </div>
+    <p class="geo-note" id="geo-note"></p>
+  </div>
+</div>
+
 <div class="overlay" id="help-overlay" hidden>
   <div class="help-card glass">
     <div class="help-head">
@@ -281,6 +283,6 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=74"></script>
+<script src="app.js?v=76"></script>
 </body>
 </html>
