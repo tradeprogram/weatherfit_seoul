@@ -195,3 +195,53 @@ class TestPopularNote:
         from weatherfit.quality import popular_note
         popularity._notes = {}
         assert "자료 없음" in popular_note(place("무명", cid="KOY"))
+
+
+class TestRatingFloor:
+    """평점은 합성값이다. 그래서 두 가지를 동시에 지켜야 한다 —
+    품질 하한은 실제로 작동하고, 그 값은 화면으로 새 나가지 않는다."""
+
+    def test_합성임을_숨기지_않는다(self):
+        """제안서가 '모르는 것을 아는 척하지 않는다'를 차별점으로 내세운다.
+        지어낸 값을 실측처럼 흘리면 그 원칙이 가장 아픈 자리에서 무너진다."""
+        from weatherfit import ratings
+
+        assert ratings.is_real() is False
+        assert ratings.table()["meta"]["synthetic"] is True
+
+    def test_같은_가게는_늘_같은_값이다(self):
+        """돌릴 때마다 바뀌면 시연 중에 같은 화면이 두 번 안 나온다."""
+        from weatherfit.ratings import synth
+
+        assert synth("KO시험") == synth("KO시험")
+        assert synth("KO시험") != synth("KO다른곳")
+
+    def test_그럴듯한_범위에_있다(self):
+        """5.0이 흔하면 가짜 티가 나고 3.0이 흔해도 그렇다."""
+        from weatherfit.ratings import HI, LO, synth
+
+        vals = [synth(f"KO{i}")["rating"] for i in range(400)]
+        assert all(LO <= v <= HI for v in vals)
+        assert 4.0 <= sum(vals) / len(vals) <= 4.4
+
+    def test_하한을_넘는지_판별한다(self):
+        from weatherfit import ratings
+
+        got = [c for c in ratings.table()["place"] if not ratings.passes(c)]
+        assert got, "하한에 걸리는 곳이 하나도 없으면 문턱이 무의미하다"
+
+    def test_자료가_없으면_막지_않는다(self):
+        """모르는 것을 '나쁘다'로 처리하면 멀쩡한 곳이 사라진다."""
+        from weatherfit.ratings import passes
+
+        assert passes("자료없는cid") is True
+
+    def test_평점이_응답으로_새지_않는다(self):
+        """화면에 띄우지 않기로 했다. 카드와 일정 어디에도 없어야 한다."""
+        import inspect
+
+        from weatherfit import course, server
+
+        for mod in (server, course):
+            src = inspect.getsource(mod)
+            assert "rating" not in src, f"{mod.__name__}에 평점이 새어 있다"

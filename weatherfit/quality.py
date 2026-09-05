@@ -269,6 +269,20 @@ def rank(cands, origin, taste=None, pop: dict | None = None,
         from .popularity import scores as _pop
         pop = _pop()
 
+    # 품질 하한. 평점이 낮거나 리뷰가 얇은 곳은 추천에서 뺀다.
+    #
+    # 점수 축으로 두지 않고 문턱으로 두는 이유가 있다. 평점은 '얼마나
+    # 좋은가'가 아니라 '못 믿을 것을 걸러내는' 값으로 쓰는 편이 맞다 —
+    # 4.6과 4.4의 차이는 표본 잡음이지 맛의 차이가 아니다.
+    #
+    # 자료가 없는 곳은 막지 않는다. 모르는 것을 '나쁘다'로 처리하면
+    # 멀쩡한 곳이 사라진다.
+    from .ratings import passes as _rating_ok
+
+    kept = [it for it in cands if _rating_ok(it[0].cid)]
+    if kept:
+        cands = kept          # 전부 걸리면 하한을 포기한다. 빈 목록보다 낫다.
+
     scored = []
     for item in cands:
         p = item[0]
