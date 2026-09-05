@@ -598,7 +598,45 @@ def _fetch_wikipedia_ko(**kw) -> dict:
     return _fetch_wikipedia(**kw)
 
 
-# --------------------------------------- 소스 3 · 한국관광데이터랩 한류 소비
+# ------------------------------------ 소스 3 · 외국인 유동인구 (방문 실측)
+
+@source(name="footfall", kind="visits", unit="낮 시간대 외국인 하루 평균",
+        entity="dong", min_total=300.0,
+        note="관심이 아니라 **방문**이다. 서울시가 행정동 단위로 공개하는 "
+             "단기체류 외국인 생활인구. 위키백과가 '새로 알아보는 사람'을 "
+             "잰다면 이건 실제로 그 자리에 있던 사람을 잰다.")
+def _fetch_footfall(verbose: bool = True, **_) -> dict:
+    """행정동 424개의 월별 계열. 받아 둔 집계본을 읽을 뿐 네트워크를 타지 않는다.
+
+    갱신은 `python -m weatherfit.footfall fetch`가 한다. 원자료가 한 달에
+    31만 행이라 수집과 분석을 갈라 두지 않으면 매번 몇 분씩 기다려야 한다.
+    """
+    from .footfall import monthly, table
+
+    t = table()
+    if not t.get("series"):
+        if verbose:
+            print("  받아 둔 유동인구가 없습니다: "
+                  "python -m weatherfit.footfall fetch")
+        return {}
+    try:
+        names = json.loads((ROOT / "data" / "footfall" / "dong_name.json")
+                           .read_text(encoding="utf-8"))
+    except Exception:
+        names = {}
+
+    rows = {}
+    for dong in t["series"]:
+        nm = names.get(dong) or {}
+        label = f"{nm.get('gu', '')} {nm.get('dong', '')}".strip() or dong
+        rows[dong] = {"label": label, "ref": dong, "why": "",
+                      "values": monthly(dong, "day")}
+    if verbose:
+        print(f"  행정동 {len(rows)}개 · {len(t['meta'].get('months', []))}개월")
+    return rows
+
+
+# --------------------------------------- 소스 4 · 한국관광데이터랩 한류 소비
 
 DATALAB_DIR = ROOT / "data" / "datalab"
 

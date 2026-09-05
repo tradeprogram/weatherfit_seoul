@@ -180,7 +180,7 @@ class TestSourceRegistry:
 
         for s in SOURCES.values():
             assert s.kind in {"attention", "visits", "spend", "search"}
-            assert s.entity in {"place", "category"}
+            assert s.entity in {"place", "category", "dong"}
             assert s.unit and s.note      # 무엇을 재는지 말할 수 있어야 한다
 
 
