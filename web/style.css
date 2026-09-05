@@ -833,3 +833,7 @@ body.lst-on .leaflet-layer.basemap{filter:saturate(.12) brightness(1.16) contras
   font-variant-numeric:tabular-nums}
 .quiet-empty li span{margin-left:auto;color:var(--ink-3);font-size:11px;
   font-variant-numeric:tabular-nums}
+
+/* 지금 붐빔 — 상업 지도가 구조적으로 못 하는 말이라 눈에 띄게 둔다 */
+.badge.crowd{background:#fbe9e6;color:#a8503f;cursor:help}
+.badge.crowd em{font-style:normal;font-weight:500;margin-left:5px;opacity:.85}

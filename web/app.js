@@ -601,7 +601,7 @@ function renderPlan() {
       <div class="body">
         <div class="t">${esc(s.title)}
           ${s.ends_today ? '<span class="badge today">오늘 마지막</span>' : ''}
-          ${trendBadge(s.trend)}</div>
+          ${crowdBadge(s.crowd)}${trendBadge(s.trend)}</div>
         <div class="m">${esc(s.category_path || s.category)}
           · ${ROLE_NAME[s.role] || ''} · ${s.dwell_min}분
           ${s.hours_assumed ? '<span class="warn-tag">시간 미상</span>' : ''}</div>
@@ -661,6 +661,19 @@ function filtered() {
 
 /* 트렌드 배지. 오르는 쪽만 보여 주면 '뜨는 곳만 있다'는 인상을 주는데,
    실제로는 식는 곳도 추천에 남는다 — 순위에 덜 반영할 뿐이다. 양쪽 다 적는다. */
+/* 지금 붐비는가. 상업 지도가 구조적으로 못 하는 말이라 눈에 띄게 둔다.
+   다만 '가지 마세요'로 끝내면 갈 곳을 잃는다 — 언제 한산해지는지 함께
+   적어 시간을 옮길 수 있게 한다. */
+function crowdBadge(c) {
+  if (!c || !c.crowded) return '';
+  const when = c.relief_at ? c.relief_at.slice(11, 16) : '';
+  const tip = [c.message, c.min ? `지금 ${c.min.toLocaleString()}~${
+    c.max.toLocaleString()}명` : '', c.visitor_rate
+      ? `외지인 ${c.visitor_rate.toFixed(0)}%` : ''].filter(Boolean).join(' · ');
+  return `<span class="badge crowd" title="${esc(tip)}">${esc(c.level)}${
+    when ? `<em>${when} 이후 여유</em>` : ''}</span>`;
+}
+
 function trendBadge(t) {
   if (!t) return '';
   const pct = Math.round(t.yoy * 100);
@@ -735,7 +748,7 @@ function renderCandidates() {
     : `지금 갈 수 있는 ${rows.length.toLocaleString()}곳`;
   $('#cand-list').innerHTML = rows.slice(0, 120).map(c => `
     <li data-cid="${esc(c.cid)}" class="${S.selected === c.cid ? 'sel' : ''}">
-      <div class="t">${esc(c.title)}${trendBadge(c.trend)}${
+      <div class="t">${esc(c.title)}${crowdBadge(c.crowd)}${trendBadge(c.trend)}${
         S.area && c.adm_cd && S.area.dong[c.adm_cd]
           && S.area.dong[c.adm_cd].quiet
           ? '<span class="badge quiet">아직 조용함</span>' : ''}</div>

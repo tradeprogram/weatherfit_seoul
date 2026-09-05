@@ -245,3 +245,60 @@ class TestRatingFloor:
         for mod in (server, course):
             src = inspect.getsource(mod)
             assert "rating" not in src, f"{mod.__name__}에 평점이 새어 있다"
+
+
+class TestCrowd:
+    """'지금 가지 마세요'는 실측 없이는 주장일 뿐이다.
+    그래서 키가 없거나 관측 지역이 멀면 아무 말도 하지 않아야 한다."""
+
+    def test_관측_지역이_멀면_모른다고_한다(self):
+        """121곳이 서울 전역을 덮지 않는다. 남의 동네 혼잡을 이 자리의
+        혼잡이라고 말하면 안 된다."""
+        from weatherfit.crowd import NEAR_M, nearest
+
+        a, d = nearest(37.6890, 127.0150)      # 도봉산
+        assert a is None and d > NEAR_M
+
+    def test_가까우면_관측_지역을_찾는다(self):
+        from weatherfit.crowd import NEAR_M, nearest
+
+        a, d = nearest(37.5665, 126.9780)      # 서울시청
+        assert a and d <= NEAR_M
+
+    def test_키가_없으면_아무_말도_안_한다(self, monkeypatch):
+        from weatherfit import crowd
+
+        monkeypatch.delenv("SEOUL_RTD_KEY", raising=False)
+        crowd._live.clear()
+        assert crowd.live("광화문·덕수궁") is None
+        assert crowd.at(37.5665, 126.9780) is None
+
+    def test_붐비는지_판별한다(self):
+        from weatherfit.crowd import is_crowded
+
+        assert is_crowded({"level": "붐빔"})
+        assert is_crowded({"level": "약간 붐빔"})
+        assert not is_crowded({"level": "보통"})
+        assert not is_crowded(None)
+
+    def test_언제_한산해지는지_찾는다(self):
+        """'가지 마세요'로 끝내면 갈 곳을 잃는다. 시간을 옮겨 준다."""
+        from weatherfit.crowd import relief
+
+        got = {"level": "붐빔", "forecast": [
+            {"at": "2026-09-06 15:00", "level": "붐빔"},
+            {"at": "2026-09-06 16:00", "level": "약간 붐빔"},
+            {"at": "2026-09-06 17:00", "level": "보통"}]}
+        assert relief(got)["at"].endswith("17:00")
+
+    def test_안_붐비면_옮길_이유가_없다(self):
+        from weatherfit.crowd import relief
+
+        assert relief({"level": "여유", "forecast": []}) is None
+
+    def test_관측_지역_목록이_저장되어_있다(self):
+        from weatherfit.crowd import areas
+
+        got = areas()
+        assert len(got) > 100
+        assert all(a["lat"] and a["lon"] and a["name"] for a in got)

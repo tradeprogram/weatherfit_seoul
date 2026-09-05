@@ -136,6 +136,7 @@ def health():
         "keys": {
             "visitseoul_api": bool(os.environ.get("VISITSEOUL_API_KEY")),
             "kma": bool(os.environ.get("KMA_API_KEY")),
+            "seoul_rtd": bool(os.environ.get("SEOUL_RTD_KEY")),
             "llm": llm.available,
         },
         "routing": router().providers,
@@ -200,6 +201,7 @@ def _row(p, verdict, detail, lat, lon, lang: str = "ko") -> dict:
         "category_path": t["category_path"], "summary": (t["summary"] or "")[:120],
         "lat": p.lat, "lon": p.lon, "address": t["address"],
         "gu": p.gu, "dong": p.dong, "adm_cd": getattr(p, "adm_cd", ""),
+        "crowd": _crowd_of(p),
         "tags": (t["tags"] or [])[:4], "subway": t["subway"],
         "use_time": t["use_time"], "closed_days": t["closed_days"],
         "text_lang": t["lang"],
@@ -363,6 +365,48 @@ def thermal_map():
     from .remote import table
     t = table()
     return {"meta": t.get("meta", {}), "dong": t.get("dong", {})}
+
+
+def _crowd_of(p) -> dict | None:
+    """이 장소의 지금 혼잡. 관측 지역이 800m 안에 없으면 None이다.
+
+    남의 동네 혼잡을 이 자리의 혼잡이라고 말하면 안 된다. 121곳이
+    서울 전역을 덮지 않는다는 사실을 감추지 않는다.
+    """
+    from .crowd import at, is_crowded, relief
+
+    if not (p.lat and p.lon):
+        return None
+    got = at(p.lat, p.lon)
+    if not got:
+        return None
+    ease = relief(got)
+    return {"level": got["level"], "message": got["message"],
+            "min": got["min"], "max": got["max"],
+            "visitor_rate": got["visitor_rate"], "at": got["at"],
+            "crowded": is_crowded(got),
+            "relief_at": (ease or {}).get("at", ""),
+            "relief_level": (ease or {}).get("level", "")}
+
+
+@app.get("/api/crowd")
+def crowd_now():
+    """관측 121곳의 지금 혼잡. 지도의 혼잡 표시가 쓴다."""
+    from .crowd import CROWDED, areas, live
+
+    out = []
+    for a in areas():
+        got = live(a["name"])
+        out.append({**a,
+                    "level": (got or {}).get("level", ""),
+                    "crowded": bool(got and got["level"] in CROWDED),
+                    "visitor_rate": (got or {}).get("visitor_rate", 0.0),
+                    "at": (got or {}).get("at", "")})
+    live_n = sum(1 for x in out if x["level"])
+    return {"meta": {"areas": len(out), "live": live_n,
+                     "key": bool(os.environ.get("SEOUL_RTD_KEY")),
+                     "source": "서울시 실시간 도시데이터 · 5~10분 갱신"},
+            "areas": out}
 
 
 @app.get("/api/area")
