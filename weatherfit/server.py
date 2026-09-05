@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .chat import LANDMARKS, Intent, compose_reply, parse_intent
-from .i18n import localize, to_en
+from .i18n import deep_en, localize, to_en
 from .momentum import badge as trend_badge
 from .popularity import scores as popularity_scores
 from .taste import PARTY_AVOID, PARTY_TAGS, Taste, mood_interests
@@ -654,10 +654,14 @@ def agent_turn(body: AgentIn):
         users = [m for m in body.messages if m.role == "user"]
         msg = users[-1].content.strip() if users else ""
     if not msg:
-        return {"answer": "어디서, 얼마나 시간이 있으신지 알려주시면 "
-                          "지금 갈 수 있는 곳만 골라 드릴게요.",
-                "course": None, "intent": None, "tool_trace": [],
-                "evidence": [], "actions": [], "engine": "rules"}
+        blank = ("Tell me where you are and how long you have, and I will "
+                 "pick only places you can actually visit now."
+                 if body.lang == "en" else
+                 "어디서, 얼마나 시간이 있으신지 알려주시면 "
+                 "지금 갈 수 있는 곳만 골라 드릴게요.")
+        return {"answer": blank, "course": None, "intent": None,
+                "tool_trace": [], "evidence": [], "actions": [],
+                "engine": "rules"}
 
     payload = {"message": msg, "lat": body.lat, "lon": body.lon,
                "at": body.at, "intent": body.intent, "taste": body.taste,
@@ -669,15 +673,21 @@ def agent_turn(body: AgentIn):
 
     course = got["course"]
     course["engine"] = engine
+    lang = body.lang
     return {
         "answer": answer, "reply": answer,        # 예전 이름도 함께
-        "course": course,
+        "course": localize(course, lang),
         "intent": got["intent"].to_dict(),
         "taste": got["taste"].to_dict(),
-        "taste_summary": got["taste"].describe(),
-        "where": got["where"], "heat": got["heat"],
-        "tool_trace": got["tool_trace"], "evidence": got["evidence"],
-        "actions": got["actions"], "origin": got["origin"],
+        "taste_summary": to_en(got["taste"].describe())
+        if lang == "en" else got["taste"].describe(),
+        "where": localize(got["where"], lang),
+        "heat": localize(got["heat"], lang),
+        # 도구 실행 기록과 근거도 화면에 그대로 나간다
+        "tool_trace": deep_en(got["tool_trace"], lang),
+        "evidence": deep_en(got["evidence"], lang),
+        "actions": deep_en(got["actions"], lang),
+        "origin": got["origin"],
         "engine": engine, "llm_available": deps["llm"].available,
     }
 

@@ -134,3 +134,39 @@ class TestChrome:
         assert LANGS == ("ko", "en")
         html = pathlib.Path("web/index.html").read_text(encoding="utf-8")
         assert 'data-lang="ja"' not in html and 'data-lang="zh-CN"' not in html
+
+
+class TestAgentEnglish:
+    """도우미는 답변만이 아니라 도구 기록·근거·행동까지 영어여야 한다.
+    화면에 그대로 나가는 값들이다."""
+
+    def test_전부_우리_글인_덩어리는_통째로_옮긴다(self):
+        """도구 기록에는 장소명이 안 들어가므로 필드를 가릴 필요가 없다.
+        가리려 들면 'title'처럼 문맥에 따라 뜻이 갈리는 키에서 반드시 틀린다."""
+        from weatherfit.i18n import deep_en
+
+        got = deep_en([{"tool": "read_weather", "detail": "비 (강수 4.0mm)"},
+                       {"label": "판정 근거"}], "en")
+        assert got[0]["detail"] == "Rain (precipitation 4.0mm)"
+        assert got[1]["label"] == "Why this call"
+
+    def test_한국어면_건드리지_않는다(self):
+        from weatherfit.i18n import deep_en
+
+        got = deep_en([{"detail": "비 (강수 4.0mm)"}], "ko")
+        assert got[0]["detail"] == "비 (강수 4.0mm)"
+
+    def test_한_글자_날씨말이_낱말을_자르지_않는다(self):
+        """'비'를 살리면서 '비빔밥'과 '분위기'는 건드리지 않아야 한다.
+        경계가 없던 동안은 이 키들을 아예 뺄 수밖에 없었다."""
+        assert to_en("비") == "Rain"
+        assert to_en("비 (강수 4.0mm)").startswith("Rain")
+        assert to_en("비빔밥") == "비빔밥"
+        assert to_en("분위기 좋은 곳") == "분위기 좋은 곳"
+
+    def test_도우미_안내문이_두_언어를_모두_가진다(self):
+        import pathlib
+
+        s = pathlib.Path("web/app.js").read_text(encoding="utf-8")
+        assert "AI_PLACEHOLDER" in s
+        assert "Where are you, and how long do you have?" in s

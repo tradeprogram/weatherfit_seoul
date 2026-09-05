@@ -64,6 +64,10 @@ PHRASES: dict[str, str] = {
     "구름많음": "Mostly cloudy",
     "구름 많음": "Mostly cloudy",
     "비/눈": "Rain or snow",
+    # 한 글자짜리는 처음엔 뺐다. 이제 앞뒤 한글 경계가 붙어 '비빔밥'이나
+    # '분위기' 가운데를 자르지 않으므로 되살린다.
+    "비": "Rain",
+    "눈": "Snow",
     "소나기": "Showers",
     "빗방울": "Drizzle",
     "없음": "None",
@@ -188,6 +192,36 @@ PHRASES: dict[str, str] = {
     "보행자도로": "footpath",
     "도착": "arrive",
     "수도권": "Seoul metro",
+
+    # ── 에이전트 도구 기록·근거·행동
+    "시청": "City Hall",
+    "지표면온도": "surface temperature",
+    "상위": "top",
+    "녹지": "greenery",
+    "지표 열부담": "surface heat load",
+    "서울 평균 수준": "around the Seoul average",
+    "합성": "composite",
+    "보관함에 저장": "Save it",
+    "판정 근거": "Why this call",
+    "제외": "excluded",
+    "직접 지정": "set manually",
+
+    "중": "of",
+    "사용": "used",
+    "일정 보기": "See the plan",
+    "다시 짜기": "Rebuild",
+    "기준으로 짜 봤어요.": " — here is a plan.",
+    "날씨는": "Weather:",
+    "예요.": ".",
+    "마음에 안 드는 곳이 있으면": "If you do not like a stop, say",
+    "라고 말씀해 주세요.": ".",
+    "다른 곳으로": "swap it",
+    "조건 없음": "no conditions given",
+    "일정 보기": "See the plan",
+    "다시 짜기": "Rebuild",
+    "저장": "Save",
+    "실외 활동 가능": "outdoors are fine",
+    "으로": " by",
 }
 
 # 숫자에 붙는 단위는 낱말로 바꾸면 다른 말을 망가뜨린다. '조회'가 '조x'가
@@ -203,6 +237,7 @@ UNITS: list[tuple[str, str]] = [
     (r"([\d,]+)\s*곳", r"\1 places"),
     (r"([\d,]+)\s*건", r"\1 items"),
     (r"([\d,]+)\s*회", r"\1 views"),
+    (r"([\d,]+)\s*시간", r"\1 hrs"),
     (r"([\d,]+)\s*분", r"\1 min"),
     (r"([\d,]+)\s*개", r"\1"),
 ]
@@ -276,6 +311,22 @@ CROWD_MSG = {
 
 def crowd_message(level: str, lang: str) -> str:
     return CROWD_MSG.get(level, "") if lang == "en" else ""
+
+
+def deep_en(obj, lang: str = "ko"):
+    """전부 우리가 쓴 글인 덩어리는 문자열을 통째로 옮긴다.
+
+    도구 실행 기록·근거·행동 라벨이 그렇다. 여기엔 장소명이 안 들어가므로
+    필드를 가릴 필요가 없고, 가리려 들면 'title'처럼 문맥에 따라 뜻이
+    갈리는 키에서 반드시 틀린다.
+    """
+    if lang != "en":
+        return obj
+    if isinstance(obj, dict):
+        return {k: deep_en(v, lang) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [deep_en(v, lang) for v in obj]
+    return to_en(obj) if isinstance(obj, str) else obj
 
 
 def localize(obj, lang: str = "ko"):
