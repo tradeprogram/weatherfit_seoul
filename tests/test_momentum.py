@@ -459,7 +459,7 @@ class TestRankingWiring:
         from weatherfit import quality as q
 
         total = (q.W_NEAR + q.W_QUALITY + q.W_POPULAR + q.W_MOMENTUM
-                 + q.W_TASTE + q.W_STYLE)
+                 + q.W_CROWD + q.W_TASTE + q.W_STYLE)
         assert total == pytest.approx(1.0)
 
     def test_자료가_없으면_중립이다(self):

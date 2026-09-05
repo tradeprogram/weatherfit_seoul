@@ -13,7 +13,7 @@ const LS_VAULT = 'weatherfit.vault';
 const S = {
   lat:CITY_HALL[0], lon:CITY_HALL[1], accuracy:null, where:null, precise:false,
   mode:'auto', hours:4, at:null,
-  course:null, candidates:[], stats:null, area:null, quiet:false,
+  course:null, candidates:[], stats:null, area:null, quiet:false, meals:[],
   catFilter:null, selected:null, showAll:false,
   mapMode:'plain', thermal:null, dongGeo:null, styles:[],
   history:[], intent:null, busy:false,
@@ -371,7 +371,7 @@ async function refresh() {
     const [course, cands] = await Promise.all([
       postJSON('/api/plan', { lat:S.lat, lon:S.lon, mode:S.mode, at:S.at,
                               hours:S.hours, interests:S.interests,
-                              styles:S.styles, taste:S.taste,
+                              styles:S.styles, taste:S.taste, meals:S.meals,
                               lang:S.lang, exclude:S.exclude }),
       getJSON('/api/candidates', { ...baseParams(), radius_m:2500, limit:200 }),
     ]);
@@ -608,6 +608,7 @@ function renderPlan() {
           · ${ROLE_NAME[s.role] || ''} · ${s.dwell_min}분
           ${s.hours_assumed ? '<span class="warn-tag">시간 미상</span>' : ''}</div>
         <div class="l">${esc(s.line)}</div>
+        <span class="go" aria-hidden="true" title="자세히 보기">›</span>
         <div class="stop-acts">
           <button data-act="like" data-cid="${esc(s.cid)}">👍 이런 곳 더</button>
           <button data-act="swap" data-cid="${esc(s.cid)}">↻ 다른 곳</button>
@@ -1413,6 +1414,60 @@ function bindUI() {
 
   $$('#tabs button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 
+  /* 끼니. 고른 시간대마다 식당이 하나씩 들어간다 — 일정이 촘촘하면
+     '식사 시간이면 음식 먼저' 정도로는 밥때가 그냥 지나간다. */
+  $$('#meal-seg button').forEach(b => b.onclick = () => {
+    const on = b.classList.toggle('on');
+    const m = b.dataset.meal;
+    S.meals = on ? [...new Set([...S.meals, m])] : S.meals.filter(x => x !== m);
+    refresh();
+  });
+
+  /* 지명으로 찾기. 내 위치가 아닌 곳도 미리 볼 수 있어야 한다 —
+     여행은 대개 가기 전에 계획한다. */
+  const q = $('#place-q'), list = $('#find-list');
+  let findTimer = null;
+  const closeFind = () => { list.hidden = true; list.innerHTML = ''; };
+  q.oninput = () => {
+    clearTimeout(findTimer);
+    const v = q.value.trim();
+    if (v.length < 2) return closeFind();
+    findTimer = setTimeout(async () => {
+      let items = [];
+      try { items = (await getJSON('/api/search', { q:v, limit:8 })).items || []; }
+      catch (e) { return closeFind(); }
+      if (!items.length) {
+        list.innerHTML = `<li class="none">${tx('찾지 못했습니다')}</li>`;
+        list.hidden = false; return;
+      }
+      // 영어 화면에서는 로마자 이름을 앞세운다. 'Seongsu'라고 쳐 놓고
+      // '성수'가 돌아오면 맞게 찾은 것인지 확인할 방법이 없다.
+      list.innerHTML = items.map((it, i) => {
+        const en = S.lang === 'en' && it.en;
+        return `<li data-i="${i}">${esc(en || it.name)}` +
+               `<small>${esc(tx(it.sub || ''))}</small></li>`;
+      }).join('');
+      list.hidden = false;
+      $$('#find-list li[data-i]').forEach(li => li.onclick = async () => {
+        const it = items[+li.dataset.i];
+        closeFind();
+        q.value = (S.lang === 'en' && it.en) || it.name;
+        setOrigin(it.lat, it.lon, { precise:false });
+        await refreshWhere();
+        await refresh();
+        if (map) map.setView([it.lat, it.lon], 15);
+      });
+    }, 220);
+  };
+  q.onkeydown = e => { if (e.key === 'Escape') closeFind(); };
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.where-find')) closeFind();
+  });
+  $('#place-me').onclick = async () => {
+    q.value = '';
+    await locate(); await refreshWhere(); await refresh();
+  };
+
   $$('#quiet-seg button').forEach(b => b.onclick = async () => {
     $$('#quiet-seg button').forEach(x => x.classList.toggle('on', x === b));
     S.quiet = !!b.dataset.q;
@@ -1485,13 +1540,20 @@ function bindUI() {
 /* 화면에 남는 우리 문장을 영어로. 서버 쪽 i18n.py와 같은 구절 표이고,
    같은 이유로 세 글자 이하 키에는 경계를 건다 — '도보'가 '듣도보도못한말'
    안에서 걸리면 낱말 가운데가 잘린다. */
-const KO2EN = {"판정 불가": "Unverifiable", "판정불가": "Unverifiable", "통과": "Open", "탈락": "Excluded", "기간": "Dates", "운영": "Hours", "날씨": "Weather", "이동": "Travel", "상시 콘텐츠 (기간 없음)": "Always open (no set dates)", "일정 표기를 해석할 수 없음": "Schedule text could not be parsed", "시작 예정": "starts", "종료": "ended", "진행 중": "Currently running", "오늘 마지막": "Last day today", "운영시간 판정 불가": "Opening hours could not be determined", "현재 휴무 또는 영업시간 밖": "Closed now or outside opening hours", "영업 중": "Open now", "시간 미상": "Hours unknown", "에 문을 열어 두는 곳입니다": " and open at this time", "도착이면 식사 시간에 맞습니다": " arrival fits a mealtime", "곧 닫습니다": "closing soon", "실외 가능": "Outdoor OK", "실외 부적합": "Not suited to outdoors", "실외 유지": "outdoors kept", "실내외 불명": "Indoor/outdoor unknown", "실내": "Indoor", "실외": "Outdoor", "맑음": "Clear", "흐림": "Cloudy", "구름많음": "Mostly cloudy", "구름 많음": "Mostly cloudy", "비/눈": "Rain or snow", "소나기": "Showers", "빗방울": "Drizzle", "없음": "None", "폭염": "Extreme heat", "한파": "Extreme cold", "강수": "precipitation", "야외 활동에 무리가 없습니다": "fine for being outdoors", "지금 갈 수 있음": "You can go now", "지금 날씨": "Current weather", "주변에 열린 곳": "open nearby", "기준 위치": "Reference point", "주변": "nearby", "뜨는 중": "Rising", "최근 급등": "Recent spike", "올랐다 진정": "Rose, now easing", "꾸준함": "Steady", "식는 중": "Cooling", "자료 없음": "No data", "기준 흔들림": "Baseline shifted", "아직 조용함": "Still quiet", "붐빔": "Crowded", "약간 붐빔": "Somewhat crowded", "보통": "Moderate", "여유": "Not busy", "가까움": "Nearby", "정보 충실": "Well documented", "알려진 곳": "Well known", "요즘 뜨는": "Trending", "취향 일치": "Matches taste", "여행 스타일": "Travel style", "추이 자료 없음 — 순위에 영향 없음": "No trend data — does not affect ranking", "작년 같은 달 대비": "vs. the same month last year", "자료 없음 — 충실도로 대신": "No data — using content quality instead", "도보": "Walk", "대중교통": "Transit", "걷기": "Walking", "실측": "Measured", "추정": "Estimated", "오늘의 앵커": "Today's anchor", "식사·카페": "Meal or cafe", "둘러볼 곳": "Something to see", "내 위치": "My location", "앵커": "anchor", "기상청 초단기실황": "KMA nowcast", "격자": "grid", "직선": "straight-line", "우회율": "detour factor", "평균 이동속도 기반 추정": "estimated from average travel speed", "보행자 경로": "pedestrian route", "도로망 보행 경로": "road-network walking route", "실시간 최적경로": "real-time optimal route", "직선거리 기반 추정": "estimated from straight-line distance", "직선거리 추정": "straight-line estimate", "환승": "transfers", "운영시간 확정": "hours confirmed", "미설정 — 기본값": "not set — falling back to a default", "으로 판정합니다": " for the check", "기본값": "default", "설명 상세": "detailed description", "태그 다수": "many tags", "무장애 정보": "accessibility info", "근처에 지금 열린 행사가 없어 상시 콘텐츠로 시작합니다.": "No events are running nearby, so the plan starts from always-open places.", "실내라 날씨의 영향을 받지 않습니다.": "Indoors — the weather does not affect it.", "라 날씨의 영향을 받지 않습니다.": " — weather does not affect it.", "날씨가 바뀌면 여기로 피할 수 있습니다.": "A fallback if the weather turns.", "일정 사이에 쉬어 가기 좋습니다.": "A good pause between stops.", "시각 패턴을 찾지 못함": "No time pattern found", "걸어서": "walk", "태그 다섯 개 넘음": "over five tags", "무장애 정보 있음": "accessibility info", "홈페이지": "website", "시간 확정": "hours confirmed", "설명이 긴 편": "long description", "위키백과": "Wikipedia", "보행자도로": "footpath", "도착": "arrive", "수도권": "Seoul metro", "본문으로 건너뛰기": "Skip to content", "웨더핏 서울": "WeatherFit Seoul", "뜨고 있지만 아직 붐비지 않는 곳": "Rising, but not yet crowded", "실외 주의": "Outdoors risky", "🍚 음식": "🍚 Food", "🎨 문화": "🎨 Culture", "🏯 역사": "🏯 History", "🌳 자연": "🌳 Nature", "🛍 쇼핑": "🛍 Shopping", "✋ 체험": "✋ Hands-on", "🏘 동네 살아보기": "🏘 Live like a local", "🎭 공연·전시": "🎭 Arts & shows", "🌿 쉬러 왔어요": "🌿 Here to rest", "🌙 분위기 좋은 곳": "🌙 Atmosphere", "🧭 편하고 안전하게": "🧭 Easy and safe", "내 취향": "My taste", "체류": "Time at stops", "저장한 일정이 없습니다. 마음에 드는 일정을 만든 뒤 저장을 눌러 보세요.": "No saved plans yet. Build one you like, then press Save.", "지금 갈 수 있는": "you can visit now", "반경": "within", "이런 곳 더": "More like this", "다른 곳": "Swap", "관심없음": "Not interested", "출발": "leave", "머묾": "stay", "선정 근거": "Why this place", "왜 여기": "Why here", "가는 길": "Getting there", "분류": "Category", "주소": "Address", "교통": "Transit", "전화": "Phone", "요약": "Summary", "이용시간 원문": "Opening hours (original)", "휴무일 원문": "Closed days (original)", "닫기": "Close", "사용": "used", "중": "of", "이 판단의 근거": "Evidence behind the call", "웨더핏 도우미": "WeatherFit assistant", "지금 갈 수 있는 곳만 골라 드려요": "Only places you can actually visit now", "어디서 얼마나 시간이 있으신가요?": "Where are you, and how long do you have?", "AI 도우미": "Assistant", "문화관광": "Culture", "음식": "Food", "역사관광": "History", "축제/공연/행사": "Events", "쇼핑": "Shopping", "체험관광": "Hands-on", "자연관광": "Nature", "숙박": "Stay", "비짓서울 API 3,788": "Visit Seoul API 3,788", "을 전수 수집해 측정한 값입니다.": " measured across the full set.", "운영시간, 규칙만으로 어디까지": "Opening hours — how far rules alone get us", "확정 가능": "Determinable", "가정·예외": "Assumed or exception", "에 없는 필드": " — a field the API does not have", "불명": "Unknown", "기간이 있는 콘텐츠의 시의성": "Are dated items still current", "이미": "already", "필터": "Filter", "지금 가능": "Available now", "자치구 분포": "Distribution by district", "추천이 이 분포보다 고르면 관광 분산 효과가 있다고 봅니다.": "If recommendations spread wider than this, the service disperses visits.", "지금 여기서": "Here, for", "비 오는데 실내로": "It is raining — somewhere indoors", "아이랑 갈 만한 곳": "Somewhere good with kids", "더운데 시원한 데 없어요?": "It is hot — anywhere cool?", "갑자기 비 온대요": "Rain just started", "보관함": "Saved", "동네 방문 모멘텀": "Area visit momentum", "줄어듦": "Falling", "늘어남": "Rising", "여름 한낮 지표면온도": "Summer midday surface temperature", "지금 계신 곳에서 시작합니다": "We start from where you are", "걸어갈 수 있는 거리": "walking distance", "로 시작": "", "서울시청에서 시작": "Start from City Hall", "지금은 이른 시간이라 오늘 오전 10시 기준으로 잡았습니다.": "It is early, so the plan starts at 10:00 today.", "지금은 늦은 시간이라 내일 오전 10시 기준으로 잡았습니다.": "It is late, so the plan starts at 10:00 tomorrow.", "이 서비스가 하는 일": "What this service does", "를 판정하는 계층": " — a layer that checks it", "시각에 열려 있는가를 봅니다": " time is what we check", "판정 단계": "Check stages", "종료된 행사인가": "Has the event ended", "에 실외를 권할 수 있는가": " — can we suggest going outdoors", "시각에 문을 열어 두는가": " time, is it open", "남은 시간 안에 닿을 수 있는가": "Can you get there in the time left", "를 따로 두는 이유": " — why it is kept separate", "탈락과": "Excluded and", "를 구분": " are kept apart", "소요시간": "Travel time", "실측인지 추정인지": "measured or estimated", "데이터": "Data", "관광 콘텐츠 비짓서울 API · 행정동 경계 통계청 · 기상": "Tourism content Visit Seoul API · District boundaries KOSTAT · Weather", "지도": "Map", "지도를 표시할 수 없습니다": "The map cannot be shown", "이 브라우저에서 지도를 표시할 수 없습니다.": "This browser cannot show the map.", "일정과": "The plan and", "목록은 왼쪽에서 그대로 확인할 수 있습니다.": " list are still on the left.", "플랜 B": "Plan B", "인기": "Popular", "적당": "Fair", "둘러보기": "Look around", "전체": "All", "한국어": "한국어", "실내·실외 — API에 없는 필드": "Indoor/outdoor — a field the API does not have", "필터 통과": "Passing the filter", "이미 종료": "Already ended", "‘지금 갈 수 있는가’를 판정하는 계층": "a layer that checks whether you can actually go now", "에서 시작합니다. 주변에 지금 갈 수 있는 곳이": " is the starting point. Places you can visit now nearby:", "있습니다.": ".", "조건을 바꾸고 싶으면 말씀해 주세요.": "Tell me if you want to change anything.", "종로구": "Jongno-gu", "중구": "Jung-gu", "강남구": "Gangnam-gu", "용산구": "Yongsan-gu", "마포구": "Mapo-gu", "서초구": "Seocho-gu", "영등포구": "Yeongdeungpo-gu", "송파구": "Songpa-gu", "성동구": "Seongdong-gu", "서대문구": "Seodaemun-gu", "광진구": "Gwangjin-gu", "노원구": "Nowon-gu", "성북구": "Seongbuk-gu", "동대문구": "Dongdaemun-gu", "강서구": "Gangseo-gu", "은평구": "Eunpyeong-gu", "강북구": "Gangbuk-gu", "동작구": "Dongjak-gu", "관악구": "Gwanak-gu", "중랑구": "Jungnang-gu", "도봉구": "Dobong-gu", "강동구": "Gangdong-gu", "양천구": "Yangcheon-gu", "구로구": "Guro-gu", "금천구": "Geumcheon-gu", "규칙만으로 확정되는 건": "Rules alone determine", "나머지가 LLM 정규화의 몫입니다.": "the rest is left to LLM normalisation.", "날씨 대응의 전제인데": "This is the premise for weather handling, and", "가 규칙으로 안 가려집니다.": " cannot be resolved by rules.", "지정": "dated", "이 끝난 행사입니다.": " have already ended.", "시청": "City Hall", "지표면온도": "surface temperature", "상위": "top", "녹지": "greenery", "지표 열부담": "surface heat load", "서울 평균 수준": "around the Seoul average", "합성": "composite", "보관함에 저장": "Save it", "판정 근거": "Why this call", "일정 보기": "See the plan", "다시 짜기": "Rebuild", "기준으로 짜 봤어요.": " — here is a plan.", "날씨는": "Weather:", "예요.": ".", "마음에 안 드는 곳이 있으면": "If you do not like a stop, say", "라고 말씀해 주세요.": ".", "다른 곳으로": "swap it", "조건 없음": "no conditions given", "저장": "Save", "실외 활동 가능": "outdoors are fine", "으로": " by", "비": "Rain", "눈": "Snow", "제외": "excluded", "직접 지정": "set manually"};
+const KO2EN = {"판정 불가": "Unverifiable", "판정불가": "Unverifiable", "통과": "Open", "탈락": "Excluded", "기간": "Dates", "운영": "Hours", "날씨": "Weather", "이동": "Travel", "상시 콘텐츠 (기간 없음)": "Always open (no set dates)", "일정 표기를 해석할 수 없음": "Schedule text could not be parsed", "시작 예정": "starts", "종료": "ended", "진행 중": "Currently running", "오늘 마지막": "Last day today", "운영시간 판정 불가": "Opening hours could not be determined", "현재 휴무 또는 영업시간 밖": "Closed now or outside opening hours", "영업 중": "Open now", "시간 미상": "Hours unknown", "에 문을 열어 두는 곳입니다": " and open at this time", "도착이면 식사 시간에 맞습니다": " arrival fits a mealtime", "곧 닫습니다": "closing soon", "실외 가능": "Outdoor OK", "실외 부적합": "Not suited to outdoors", "실외 유지": "outdoors kept", "실내외 불명": "Indoor/outdoor unknown", "실내": "Indoor", "실외": "Outdoor", "맑음": "Clear", "흐림": "Cloudy", "구름많음": "Mostly cloudy", "구름 많음": "Mostly cloudy", "비/눈": "Rain or snow", "소나기": "Showers", "빗방울": "Drizzle", "없음": "None", "폭염": "Extreme heat", "한파": "Extreme cold", "강수": "precipitation", "야외 활동에 무리가 없습니다": "fine for being outdoors", "지금 갈 수 있음": "You can go now", "지금 날씨": "Current weather", "주변에 열린 곳": "open nearby", "기준 위치": "Reference point", "주변": "nearby", "뜨는 중": "Rising", "최근 급등": "Recent spike", "올랐다 진정": "Rose, now easing", "꾸준함": "Steady", "식는 중": "Cooling", "자료 없음": "No data", "기준 흔들림": "Baseline shifted", "아직 조용함": "Still quiet", "붐빔": "Crowded", "약간 붐빔": "Somewhat crowded", "보통": "Moderate", "여유": "Not busy", "가까움": "Nearby", "정보 충실": "Well documented", "알려진 곳": "Well known", "요즘 뜨는": "Trending", "취향 일치": "Matches taste", "여행 스타일": "Travel style", "추이 자료 없음 — 순위에 영향 없음": "No trend data — does not affect ranking", "작년 같은 달 대비": "vs. the same month last year", "자료 없음 — 충실도로 대신": "No data — using content quality instead", "도보": "Walk", "대중교통": "Transit", "걷기": "Walking", "실측": "Measured", "추정": "Estimated", "오늘의 앵커": "Today's anchor", "식사·카페": "Meal or cafe", "둘러볼 곳": "Something to see", "내 위치": "My location", "앵커": "anchor", "기상청 초단기실황": "KMA nowcast", "격자": "grid", "직선": "straight-line", "우회율": "detour factor", "평균 이동속도 기반 추정": "estimated from average travel speed", "보행자 경로": "pedestrian route", "도로망 보행 경로": "road-network walking route", "실시간 최적경로": "real-time optimal route", "직선거리 기반 추정": "estimated from straight-line distance", "직선거리 추정": "straight-line estimate", "환승": "transfers", "운영시간 확정": "hours confirmed", "미설정 — 기본값": "not set — falling back to a default", "으로 판정합니다": " for the check", "기본값": "default", "설명 상세": "detailed description", "태그 다수": "many tags", "무장애 정보": "accessibility info", "근처에 지금 열린 행사가 없어 상시 콘텐츠로 시작합니다.": "No events are running nearby, so the plan starts from always-open places.", "실내라 날씨의 영향을 받지 않습니다.": "Indoors — the weather does not affect it.", "라 날씨의 영향을 받지 않습니다.": " — weather does not affect it.", "날씨가 바뀌면 여기로 피할 수 있습니다.": "A fallback if the weather turns.", "일정 사이에 쉬어 가기 좋습니다.": "A good pause between stops.", "시각 패턴을 찾지 못함": "No time pattern found", "걸어서": "walk", "태그 다섯 개 넘음": "over five tags", "무장애 정보 있음": "accessibility info", "홈페이지": "website", "시간 확정": "hours confirmed", "설명이 긴 편": "long description", "위키백과": "Wikipedia", "보행자도로": "footpath", "도착": "arrive", "수도권": "Seoul metro", "본문으로 건너뛰기": "Skip to content", "웨더핏 서울": "WeatherFit Seoul", "뜨고 있지만 아직 붐비지 않는 곳": "Rising, but not yet crowded", "실외 주의": "Outdoors risky", "🍚 음식": "🍚 Food", "🎨 문화": "🎨 Culture", "🏯 역사": "🏯 History", "🌳 자연": "🌳 Nature", "🛍 쇼핑": "🛍 Shopping", "✋ 체험": "✋ Hands-on", "🏘 동네 살아보기": "🏘 Live like a local", "🎭 공연·전시": "🎭 Arts & shows", "🌿 쉬러 왔어요": "🌿 Here to rest", "🌙 분위기 좋은 곳": "🌙 Atmosphere", "🧭 편하고 안전하게": "🧭 Easy and safe", "내 취향": "My taste", "체류": "Time at stops", "저장한 일정이 없습니다. 마음에 드는 일정을 만든 뒤 저장을 눌러 보세요.": "No saved plans yet. Build one you like, then press Save.", "지금 갈 수 있는": "you can visit now", "반경": "within", "이런 곳 더": "More like this", "다른 곳": "Swap", "관심없음": "Not interested", "출발": "leave", "머묾": "stay", "선정 근거": "Why this place", "왜 여기": "Why here", "가는 길": "Getting there", "분류": "Category", "주소": "Address", "교통": "Transit", "전화": "Phone", "요약": "Summary", "이용시간 원문": "Opening hours (original)", "휴무일 원문": "Closed days (original)", "닫기": "Close", "사용": "used", "중": "of", "이 판단의 근거": "Evidence behind the call", "웨더핏 도우미": "WeatherFit assistant", "지금 갈 수 있는 곳만 골라 드려요": "Only places you can actually visit now", "어디서 얼마나 시간이 있으신가요?": "Where are you, and how long do you have?", "AI 도우미": "Assistant", "문화관광": "Culture", "음식": "Food", "역사관광": "History", "축제/공연/행사": "Events", "쇼핑": "Shopping", "체험관광": "Hands-on", "자연관광": "Nature", "숙박": "Stay", "비짓서울 API 3,788": "Visit Seoul API 3,788", "을 전수 수집해 측정한 값입니다.": " measured across the full set.", "운영시간, 규칙만으로 어디까지": "Opening hours — how far rules alone get us", "확정 가능": "Determinable", "가정·예외": "Assumed or exception", "에 없는 필드": " — a field the API does not have", "불명": "Unknown", "기간이 있는 콘텐츠의 시의성": "Are dated items still current", "이미": "already", "필터": "Filter", "지금 가능": "Available now", "자치구 분포": "Distribution by district", "추천이 이 분포보다 고르면 관광 분산 효과가 있다고 봅니다.": "If recommendations spread wider than this, the service disperses visits.", "지금 여기서": "Here, for", "비 오는데 실내로": "It is raining — somewhere indoors", "아이랑 갈 만한 곳": "Somewhere good with kids", "더운데 시원한 데 없어요?": "It is hot — anywhere cool?", "갑자기 비 온대요": "Rain just started", "보관함": "Saved", "동네 방문 모멘텀": "Area visit momentum", "줄어듦": "Falling", "늘어남": "Rising", "여름 한낮 지표면온도": "Summer midday surface temperature", "지금 계신 곳에서 시작합니다": "We start from where you are", "걸어갈 수 있는 거리": "walking distance", "로 시작": "", "서울시청에서 시작": "Start from City Hall", "지금은 이른 시간이라 오늘 오전 10시 기준으로 잡았습니다.": "It is early, so the plan starts at 10:00 today.", "지금은 늦은 시간이라 내일 오전 10시 기준으로 잡았습니다.": "It is late, so the plan starts at 10:00 tomorrow.", "이 서비스가 하는 일": "What this service does", "를 판정하는 계층": " — a layer that checks it", "시각에 열려 있는가를 봅니다": " time is what we check", "판정 단계": "Check stages", "종료된 행사인가": "Has the event ended", "에 실외를 권할 수 있는가": " — can we suggest going outdoors", "시각에 문을 열어 두는가": " time, is it open", "남은 시간 안에 닿을 수 있는가": "Can you get there in the time left", "를 따로 두는 이유": " — why it is kept separate", "탈락과": "Excluded and", "를 구분": " are kept apart", "소요시간": "Travel time", "실측인지 추정인지": "measured or estimated", "데이터": "Data", "관광 콘텐츠 비짓서울 API · 행정동 경계 통계청 · 기상": "Tourism content Visit Seoul API · District boundaries KOSTAT · Weather", "지도": "Map", "지도를 표시할 수 없습니다": "The map cannot be shown", "이 브라우저에서 지도를 표시할 수 없습니다.": "This browser cannot show the map.", "일정과": "The plan and", "목록은 왼쪽에서 그대로 확인할 수 있습니다.": " list are still on the left.", "플랜 B": "Plan B", "인기": "Popular", "적당": "Fair", "둘러보기": "Look around", "전체": "All", "한국어": "한국어", "실내·실외 — API에 없는 필드": "Indoor/outdoor — a field the API does not have", "필터 통과": "Passing the filter", "이미 종료": "Already ended", "‘지금 갈 수 있는가’를 판정하는 계층": "a layer that checks whether you can actually go now", "에서 시작합니다. 주변에 지금 갈 수 있는 곳이": " is the starting point. Places you can visit now nearby:", "있습니다.": ".", "조건을 바꾸고 싶으면 말씀해 주세요.": "Tell me if you want to change anything.", "종로구": "Jongno-gu", "중구": "Jung-gu", "강남구": "Gangnam-gu", "용산구": "Yongsan-gu", "마포구": "Mapo-gu", "서초구": "Seocho-gu", "영등포구": "Yeongdeungpo-gu", "송파구": "Songpa-gu", "성동구": "Seongdong-gu", "서대문구": "Seodaemun-gu", "광진구": "Gwangjin-gu", "노원구": "Nowon-gu", "성북구": "Seongbuk-gu", "동대문구": "Dongdaemun-gu", "강서구": "Gangseo-gu", "은평구": "Eunpyeong-gu", "강북구": "Gangbuk-gu", "동작구": "Dongjak-gu", "관악구": "Gwanak-gu", "중랑구": "Jungnang-gu", "도봉구": "Dobong-gu", "강동구": "Gangdong-gu", "양천구": "Yangcheon-gu", "구로구": "Guro-gu", "금천구": "Geumcheon-gu", "규칙만으로 확정되는 건": "Rules alone determine", "나머지가 LLM 정규화의 몫입니다.": "the rest is left to LLM normalisation.", "날씨 대응의 전제인데": "This is the premise for weather handling, and", "가 규칙으로 안 가려집니다.": " cannot be resolved by rules.", "지정": "dated", "이 끝난 행사입니다.": " have already ended.", "시청": "City Hall", "지표면온도": "surface temperature", "상위": "top", "녹지": "greenery", "지표 열부담": "surface heat load", "서울 평균 수준": "around the Seoul average", "합성": "composite", "보관함에 저장": "Save it", "판정 근거": "Why this call", "일정 보기": "See the plan", "다시 짜기": "Rebuild", "기준으로 짜 봤어요.": " — here is a plan.", "날씨는": "Weather:", "예요.": ".", "마음에 안 드는 곳이 있으면": "If you do not like a stop, say", "라고 말씀해 주세요.": ".", "다른 곳으로": "swap it", "조건 없음": "no conditions given", "저장": "Save", "실외 활동 가능": "outdoors are fine", "으로": " by", "비": "Rain", "눈": "Snow", "제외": "excluded", "직접 지정": "set manually", "덜 붐빔": "Less crowded", "혼잡 관측 지역 밖 — 순위에 영향 없음": "Outside the live-crowding areas — no effect on ranking", "식사": "Meals", "아침": "Breakfast", "점심": "Lunch", "저녁": "Dinner", "아침(7~11시)에 넣을 식당을 찾지 못했습니다.": "Could not fit a place to eat into breakfast (07–11).", "점심(11~15시)에 넣을 식당을 찾지 못했습니다.": "Could not fit a place to eat into lunch (11–15).", "저녁(17~21시)에 넣을 식당을 찾지 못했습니다.": "Could not fit a place to eat into dinner (17–21).", "지명·장소로 찾기 (예: 성수, 경복궁)": "Search an area or place (e.g. Seongsu, Gyeongbokgung)", "장소 검색": "Place search", "내 위치로": "Back to my location", "자세히 보기": "See details", "지역": "Area", "행정동": "Neighborhood", "찾지 못했습니다": "No match"};
 const KO2EN_RE = new RegExp(Object.keys(KO2EN)
   .sort((a, b) => b.length - a.length)
   .map(k => { const e = k.replace(/[.*+?^${}()|[\]\\\\\/-]/g, m => '\\' + m);
               return k.length <= 3 ? `(?<![가-힣])${e}(?![가-힣])` : e; })
   .join('|'), 'g');
-const KO_UNITS = [[/([\d,]+)\s*회/g, '$1 views'], [/([\d,]+)\s*분/g, '$1 min'],
+const KO_UNITS = [[/지금\s*([\d,]+)\s*~\s*([\d,]+)\s*명/g, '$1–$2 people right now'],
+  [/외지인\s*([\d.]+)\s*%/g, '$1% visitors'],
+  [/(\d{1,2}:\d{2})\s*이후 여유/g, 'eases after $1'],
+  [/([\d,]+)\s*명/g, '$1 people'],
+  [/연\s*([\d,]+)\s*회\s*조회/g, '$1 views/yr'],
+  [/연\s*([\d,]+)\s*회/g, '$1 views/yr'],
+  [/([\d,]+)\s*회\s*조회/g, '$1 views'],
+  [/([\d,]+)\s*회/g, '$1 views'], [/([\d,]+)\s*분/g, '$1 min'],
   [/([\d,]+)\s*곳/g, '$1 places'], [/([\d,]+)\s*구간/g, '$1 legs'],
   [/([\d,]+)\s*시간/g, '$1 hrs'], [/([\d,]+)\s*개월/g, '$1 months'],
   [/([\d,]+)\s*건/g, '$1 items'], [/([\d,]+)\s*정거장/g, '$1 stops']];
@@ -1512,6 +1574,14 @@ function sweepKorean(root) {
   // 라벨과 툴팁이 거기 있어서 화면에는 남아 보인다.
   (root || document.body).querySelectorAll('[title]').forEach(el => {
     if (/[가-힣]/.test(el.title)) el.title = tx(el.title);
+  });
+  // placeholder와 aria-label도 화면에 보이거나 읽힌다. 검색창을 붙이고
+  // 나서 영어 화면에 한국어 안내문 하나가 그대로 남아 있었다.
+  ['placeholder', 'aria-label'].forEach(attr => {
+    (root || document.body).querySelectorAll('[' + attr + ']').forEach(el => {
+      const v = el.getAttribute(attr);
+      if (/[가-힣]/.test(v)) el.setAttribute(attr, tx(v));
+    });
   });
   const w = document.createTreeWalker(root || document.body, NodeFilter.SHOW_TEXT);
   const jobs = [];

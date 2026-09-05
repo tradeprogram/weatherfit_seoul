@@ -264,7 +264,8 @@ def make_course(lat: float, lon: float, mode: str = "auto",
                 radius_m: int = 4000, interests: str = "",
                 explain: bool = False, taste: Taste | None = None,
                 lang: str = "ko", exclude: list[str] | None = None,
-                avoid: tuple[str, ...] = (), profile=None) -> dict:
+                avoid: tuple[str, ...] = (), meals: tuple[str, ...] = (),
+                profile=None) -> dict:
     """코스 생성 본체.
 
     엔드포인트를 파이썬 함수로 직접 부르면 FastAPI의 Query 기본값이
@@ -286,7 +287,7 @@ def make_course(lat: float, lon: float, mode: str = "auto",
         area_radius_m=float(radius_m) if radius_m != 4000 else radius_for(hours),
         interests=[x for x in interests.split(",") if x],
         taste=taste, exclude=set(exclude or []), avoid=avoid,
-        profile=profile,
+        profile=profile, meals=tuple(meals or ()),
     )
     out = localize(c.to_dict(lang), lang)
     out["engine"] = "rules"
@@ -333,6 +334,7 @@ class PlanIn(BaseModel):
     styles: list[str] = []             # 여행 스타일 (VITALITY)
     lang: str = "ko"
     exclude: list[str] = []            # 이번 일정에서만 빼 달라고 한 곳
+    meals: list[str] = []              # 끼니를 챙길 시간대 (breakfast/lunch/dinner)
 
 
 @app.post("/api/plan")
@@ -348,7 +350,8 @@ def plan(body: PlanIn):
     out = make_course(body.lat, body.lon, body.mode, body.at, body.hours,
                       profile=TrendProfile.from_styles(body.styles),
                       radius_m=4000, interests=",".join(body.interests),
-                      taste=taste, lang=body.lang, exclude=body.exclude)
+                      taste=taste, lang=body.lang, exclude=body.exclude,
+                      meals=tuple(body.meals or ()))
     out["taste_applied"] = not taste.is_empty
     return out
 
@@ -408,6 +411,86 @@ def crowd_now():
                      "key": bool(os.environ.get("SEOUL_RTD_KEY")),
                      "source": "서울시 실시간 도시데이터 · 5~10분 갱신"},
             "areas": out}
+
+
+@app.get("/api/search")
+def search_place(q: str = "", limit: int = Query(8, le=20)):
+    """지명·주소로 좌표를 찾는다. 내 위치가 아닌 곳도 볼 수 있게.
+
+    바깥 지오코더를 붙이지 않는다. 우리가 이미 서울의 장소 3,788건과
+    행정동 424개를 이름으로 들고 있어서, 관광 목적의 검색은 그 안에서
+    거의 다 풀린다 — '성수동', '경복궁', '홍대'가 전부 여기 있다. 키도
+    쿼터도 없고 오프라인에서 돈다.
+
+    못 찾으면 빈 목록을 준다. 엉뚱한 좌표로 보내는 것보다 낫다.
+    """
+    q = (q or "").strip()
+    if len(q) < 2:
+        return {"query": q, "items": []}
+
+    from .chat import LANDMARKS, LANDMARK_EN
+
+    idx = index()
+    out, seen = [], set()
+
+    def push(kind, name, sub, lat, lon, score, en=""):
+        key = (round(lat, 4), round(lon, 4))
+        if key in seen:
+            return
+        seen.add(key)
+        out.append({"kind": kind, "name": name, "en": en, "sub": sub,
+                    "lat": lat, "lon": lon, "score": score})
+
+    low = q.lower()
+    # 널리 쓰는 동네 이름이 먼저다. '홍대'는 장소명이 아니라 지역이다.
+    for nm, (la, lo) in LANDMARKS.items():
+        en = LANDMARK_EN.get(nm, "")
+        hit = (low in nm.lower() or nm.lower() in low
+               # 로마자로도 찾게 한다. 'Seongsu'도 'seongsu-dong'도 걸린다.
+               or (en and (low in en.lower() or en.lower().startswith(low))))
+        if hit:
+            push("area", nm, "지역", la, lo, 100 - abs(len(nm) - len(q)), en)
+
+    # 행정동
+    for f in _dong_features():
+        nm = f"{f['gu']} {f['dong']}"
+        if low in f["dong"].lower() or low in nm.lower():
+            push("dong", nm, "행정동", f["lat"], f["lon"], 80)
+
+    # 장소 이름
+    for p in idx.places:
+        if not (p.lat and p.lon):
+            continue
+        t = p.content.title or ""
+        if low in t.lower():
+            push("place", t, p.content.category, p.lat, p.lon,
+                 70 - min(len(t) - len(q), 40))
+
+    out.sort(key=lambda r: -r["score"])
+    return {"query": q, "items": out[:limit]}
+
+
+@lru_cache(maxsize=1)
+def _dong_features() -> list:
+    """행정동 이름과 중심점. 경계 파일에서 한 번만 만든다."""
+    import json as _json
+    p = Path(__file__).resolve().parent.parent / "web" / "data" / "seoul_dong.geojson"
+    try:
+        gj = _json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    out = []
+    for f in gj.get("features", []):
+        g, xs, ys, n = f.get("geometry") or {}, 0.0, 0.0, 0
+        rings = (g.get("coordinates") or [[]])[0] if g.get("type") == "Polygon"             else [r[0] for r in (g.get("coordinates") or [])]
+        pts = rings if g.get("type") == "Polygon" else [p for r in rings for p in r]
+        for pt in pts:
+            xs += pt[0]; ys += pt[1]; n += 1
+        if n:
+            pr = f["properties"]
+            out.append({"gu": pr.get("gu", ""), "dong": pr.get("dong", ""),
+                        "lat": ys / n, "lon": xs / n})
+    return out
 
 
 @app.get("/api/area")

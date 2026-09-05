@@ -7,8 +7,9 @@ from datetime import datetime
 
 import pytest
 
-from weatherfit.course import (ASSUMED_OPEN, DWELL, MIN_USEFUL_DWELL,
-                               build_course, dwell_minutes, _is_meal_time)
+from weatherfit.course import (ASSUMED_OPEN, DWELL, MEALS, MIN_USEFUL_DWELL,
+                               build_course, dwell_minutes, meal_at,
+                               _is_meal_time)
 from weatherfit.index import Place
 from weatherfit.models import Content
 from weatherfit.normalize import parse_hours, tag_environment
@@ -172,6 +173,78 @@ class TestMealTime:
     ])
     def test_식사_시간대(self, hour, expected):
         assert _is_meal_time(datetime(2026, 9, 3, hour, 0)) is expected
+
+
+class TestMealsRequested:
+    """끼니를 고르면 그 시간대에 식당이 하나 들어간다.
+
+    '식사 시간이면 음식을 먼저 본다' 정도의 선호로는 밥때가 그냥 지나간다.
+    일정이 촘촘하면 관광지가 먼저 붙어 12시가 이동 중에 지나가 버린다.
+    """
+
+    # 다양성 상한이 소분류당 1곳이라, 소분류를 갈라 두지 않으면 두 번째
+    # 식당이 끼니가 아니라 상한에 막혀 빠진다.
+    FOOD = ["한식", "카페", "양식", "분식"]
+    SPOT = ["고궁", "박물관", "공원", "전망대"]
+
+    def spread(self, n=8):
+        out = []
+        for i in range(n):
+            lat, lon = near(i)
+            food = bool(i % 2)
+            kind = "음식" if food else "문화관광"
+            sub = (self.FOOD if food else self.SPOT)[(i // 2) % 4]
+            out.append(place(f"{kind}{i}", category=kind,
+                             path=f"{kind} > {sub}", lat=lat, lon=lon,
+                             use_time="매일 07:00~22:00"))
+        return out
+
+    def meal_kinds(self, course):
+        return {meal_at(s.arrive) for s in course.steps
+                if "음식" in (s.place.content.category_path
+                             or s.place.content.category)}
+
+    def test_점심을_고르면_점심때_식당이_들어간다(self):
+        c = build_course(self.spread(), datetime(2026, 9, 3, 11, 0), CLEAR,
+                         origin=(37.5665, 126.9780), budget_min=300,
+                         meals=("lunch",))
+        assert "lunch" in self.meal_kinds(c)
+
+    def test_아침과_점심을_같이_고를_수_있다(self):
+        c = build_course(self.spread(), datetime(2026, 9, 3, 9, 0), CLEAR,
+                         origin=(37.5665, 126.9780), budget_min=420,
+                         meals=("breakfast", "lunch"))
+        assert {"breakfast", "lunch"} <= self.meal_kinds(c)
+
+    def test_안_고르면_못_채웠다고_하지_않는다(self):
+        """끼니는 요청일 때만 강제다. 요청도 안 한 밥을 못 찾았다고
+        말하면, 정작 요청한 끼니를 놓쳤을 때의 경고가 묻힌다."""
+        only = [place(f"문화{i}", path=f"문화관광 > {self.SPOT[i]}",
+                      lat=near(i)[0], lon=near(i)[1]) for i in range(4)]
+        c = build_course(only, datetime(2026, 9, 3, 11, 0), CLEAR,
+                         origin=(37.5665, 126.9780), budget_min=300)
+        assert not any("찾지 못했습니다" in n for n in c.notes)
+
+    def test_못_채우면_조용히_넘어가지_않는다(self):
+        """식당이 아예 없는 판. 빠뜨린 것을 말해야 왜 없는지 안다."""
+        only = [place(f"문화{i}", path=f"문화관광 > {self.SPOT[i]}",
+                      lat=near(i)[0], lon=near(i)[1]) for i in range(4)]
+        c = build_course(only, datetime(2026, 9, 3, 11, 0), CLEAR,
+                         origin=(37.5665, 126.9780), budget_min=300,
+                         meals=("lunch",))
+        assert any("점심" in n for n in c.notes)
+
+    def test_모르는_끼니는_무시한다(self):
+        """바깥에서 온 값이다. 오타 하나로 500을 내면 안 된다."""
+        c = build_course(self.spread(), NOON, CLEAR,
+                         origin=(37.5665, 126.9780), budget_min=300,
+                         meals=("brunch", "lunch"))
+        assert c.steps
+        assert not any("brunch" in n for n in c.notes)
+
+    def test_끼니_시간대는_겹치지_않는다(self):
+        spans = sorted(MEALS.values())
+        assert all(a[1] <= b[0] for a, b in zip(spans, spans[1:]))
 
 
 class TestSerialization:

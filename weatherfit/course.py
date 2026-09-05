@@ -244,8 +244,14 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                  taste: Taste | None = None,
                  exclude: set[str] | None = None,
                  avoid: tuple[str, ...] = (),
+                 meals: tuple[str, ...] = (),
                  profile=None) -> Course:
-    """출발 시각과 남은 시간으로 실제 일정을 짠다."""
+    """출발 시각과 남은 시간으로 실제 일정을 짠다.
+
+    `meals`를 주면 그 끼니 시간대에 **식당을 반드시 하나** 넣는다. 지금까지는
+    '식사 시간에 걸리면 음식을 먼저 본다'는 정도라, 일정이 촘촘하면 밥때가
+    그냥 지나갔다. 끼니는 취향이 아니라 하루의 뼈대다.
+    """
     course = Course(weather=weather, start=when, budget_min=budget_min)
     today = when.date()
     rt = router()
@@ -417,8 +423,21 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                  and (_is_meal_time(cursor) or (interests and "음식" in interests)))
     order = ["food", "spot"] if want_food else ["spot", "food"]
 
+    # 끼니를 아직 못 채운 것들. 시간대에 들어서면 그때 식당을 강제한다.
+    owed = {m for m in meals if m in MEALS}
+    for st in course.steps:
+        got = meal_at(st.arrive) if st.arrive else None
+        if got and "음식" in (st.place.content.category_path
+                             or st.place.content.category):
+            owed.discard(got)
+
     while len(course.steps) < max_stops and cursor < deadline:
         added = False
+        # 지금이 못 채운 끼니 시간대면 식당을 먼저 본다. 일정이 촘촘하면
+        # '식사 시간이면 음식 먼저' 정도로는 밥때가 그냥 지나간다.
+        now_meal = meal_at(cursor)
+        if now_meal in owed:
+            order = ["food", "spot"]
         for kind in order:
             cands = pick_from(foods if kind == "food"
                               else _style_first(_prefer(pool, interests),
@@ -426,12 +445,22 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
             for pick in cands[:8]:
                 if add(pick, kind if kind == "food" else "spot"):
                     added = True
+                    if kind == "food":
+                        last = course.steps[-1]
+                        done = meal_at(last.arrive) if last.arrive else None
+                        owed.discard(done)
                     break
             if added:
                 break
         if not added:
             break
         order = ["spot", "food"] if order[0] == "food" else ["food", "spot"]
+
+    # 채우지 못한 끼니는 말해 준다. 조용히 빠뜨리면 왜 없는지 알 수 없다.
+    for m in sorted(owed):
+        lo, hi = MEALS[m]
+        course.notes.append(
+            f"{MEAL_NAME[m]}({lo}~{hi}시)에 넣을 식당을 찾지 못했습니다.")
 
     # ---------- 플랜 B: 날씨가 바뀌면 갈 실내 ----------
     shelter_pool = [t for t in indoors
@@ -614,8 +643,26 @@ def _measure_legs(course: Course, rt, origin, deadline: datetime) -> None:
     course.steps = kept
 
 
+# 끼니마다 시간대가 다르다. 하나로 뭉쳐 두면 "식사 시간"이라는 말이
+# 아침을 빠뜨린다 — 아침 먹을 곳을 찾는 사람에게 11시부터 권하게 된다.
+MEALS: dict[str, tuple[int, int]] = {
+    "breakfast": (7, 11),
+    "lunch": (11, 15),
+    "dinner": (17, 21),
+}
+MEAL_NAME = {"breakfast": "아침", "lunch": "점심", "dinner": "저녁"}
+
+
+def meal_at(t: datetime) -> str | None:
+    """이 시각이 어느 끼니에 드는가."""
+    for name, (lo, hi) in MEALS.items():
+        if lo <= t.hour < hi:
+            return name
+    return None
+
+
 def _is_meal_time(t: datetime) -> bool:
-    return 11 <= t.hour < 14 or 17 <= t.hour < 21
+    return meal_at(t) in ("lunch", "dinner")
 
 
 def _urgent_first(cands, today: date):

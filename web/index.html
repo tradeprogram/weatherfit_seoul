@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-title" content="웨더핏 서울">
 <meta name="description" content="관심과 방문을 갈라 재어, 뜨고 있지만 아직 붐비지 않는 서울을 찾아 드립니다">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=98">
+<link rel="stylesheet" href="style.css?v=104">
 </head>
 <body>
 
@@ -72,6 +72,17 @@
   <section class="pane" id="pane-plan" role="tabpanel" aria-labelledby="tab-plan">
     <div class="controls">
       <div class="ctl">
+        <span class="lbl" data-en="Where">어디서</span>
+        <div class="where-find">
+          <input id="place-q" type="search" autocomplete="off"
+                 placeholder="지명·장소로 찾기 (예: 성수, 경복궁)"
+                 aria-label="장소 검색">
+          <button id="place-me" title="내 위치로" data-en="Me">내 위치</button>
+          <ul class="find-list" id="find-list" hidden></ul>
+        </div>
+      </div>
+
+      <div class="ctl">
         <span class="lbl" data-en="From">언제부터</span>
         <input type="datetime-local" id="at">
       </div>
@@ -102,6 +113,16 @@
           <button data-i="자연관광">🌳 자연</button>
           <button data-i="쇼핑">🛍 쇼핑</button>
           <button data-i="체험관광">✋ 체험</button>
+        </div>
+      </div>
+
+      <div class="ctl">
+        <span class="lbl" data-en="Meals">식사</span>
+        <div class="seg small" id="meal-seg" role="group"
+             aria-label="끼니를 챙길 시간대">
+          <button data-meal="breakfast" data-en="Breakfast">아침</button>
+          <button data-meal="lunch" data-en="Lunch">점심</button>
+          <button data-meal="dinner" data-en="Dinner">저녁</button>
         </div>
       </div>
 
@@ -301,6 +322,6 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=98"></script>
+<script src="app.js?v=104"></script>
 </body>
 </html>

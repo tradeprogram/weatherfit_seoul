@@ -114,12 +114,13 @@ class Diversity:
 
 
 # 점수 배분. 합이 1이 되게 유지한다.
-W_NEAR = 0.26      # 가까운가
-W_QUALITY = 0.20   # 콘텐츠가 충실한가
-W_POPULAR = 0.16   # 실제로 알려진 곳인가 — 지금의 크기 (위키 조회수 등)
+W_NEAR = 0.24      # 가까운가
+W_QUALITY = 0.18   # 콘텐츠가 충실한가
+W_POPULAR = 0.14   # 실제로 알려진 곳인가 — 지금의 크기 (위키 조회수 등)
 W_MOMENTUM = 0.12  # 그 크기가 커지고 있는가 — 지금의 변화
-W_TASTE = 0.14     # 이 사용자의 취향인가 (좋아요·관심없음으로 학습)
-W_STYLE = 0.12     # 이 사람이 말한 여행 스타일에 맞는가 (VITALITY 5축)
+W_CROWD = 0.12     # 지금 덜 붐비는가 — 실시간 실측
+W_TASTE = 0.12     # 이 사용자의 취향인가 (좋아요·관심없음으로 학습)
+W_STYLE = 0.08     # 이 사람이 말한 여행 스타일에 맞는가 (VITALITY 5축)
 
 # 인기와 모멘텀을 갈라 놓는 것이 요점이다. 하나로 합치면 경복궁이 늘
 # 이긴다 — 크기가 압도적이라 변화가 묻힌다. 그런데 크기는 이미 다들 아는
@@ -128,6 +129,15 @@ W_STYLE = 0.12     # 이 사람이 말한 여행 스타일에 맞는가 (VITALIT
 # 변화 쪽은 기준선 크기로 미리 깎아 둔다(momentum.shrink).
 
 MOMENTUM_UNKNOWN = 0.5   # 자료가 없으면 중립. 0은 '안 뜬다'는 뜻이 된다.
+CROWD_UNKNOWN = 0.5      # 관측 지역이 800m 밖이면 모른다 — 중립으로 둔다.
+
+# 혼잡을 점수 축으로 올린다.
+#
+# 배지로만 두면 "붐빔"이라고 적어 놓고 그 곳을 맨 위에 추천하게 된다.
+# 실제로 이태원에서 그랬다 — 후보 13곳 전부에 붐빔이 붙었는데 순위는
+# 그대로였다. 덜 붐비는 곳을 위로 올리는 것이 이 서비스가 하려는 일이고,
+# 그러려면 순위에 들어가야 한다.
+CROWD_SCORE = {"여유": 1.0, "보통": 0.7, "약간 붐빔": 0.35, "붐빔": 0.1}
 
 
 def popular_note(place: Place) -> str:
@@ -165,6 +175,7 @@ def explain(place: Place, origin, taste=None, pop: dict | None = None,
         popular = q * 0.6
     aff = taste.affinity(place) if taste is not None else 0.0
     mom, mom_note = _momentum_of(place)
+    crowd, crowd_note = _crowd_of(place)
 
     parts = [
         {"key": "near", "label": "가까움", "value": round(near, 2),
@@ -177,6 +188,8 @@ def explain(place: Place, origin, taste=None, pop: dict | None = None,
          "note": popular_note(place)},
         {"key": "momentum", "label": "요즘 뜨는", "value": round(mom, 2),
          "weight": W_MOMENTUM, "note": mom_note},
+        {"key": "crowd", "label": "덜 붐빔", "value": round(crowd, 2),
+         "weight": W_CROWD, "note": crowd_note},
     ]
     if taste is not None and not taste.is_empty:
         parts.append({"key": "taste", "label": "취향 일치",
@@ -208,6 +221,27 @@ def _momentum_of(place) -> tuple[float, str]:
     return row["score"]["momentum"], (
         f"{label} · 작년 같은 달 대비 {excess(a) * 100:+.0f}% "
         f"(연 {a['level']:,.0f}회)")
+
+
+def _crowd_of(place) -> tuple[float, str]:
+    """'지금 덜 붐비는가'를 0~1과 한 줄로. 모르면 중립."""
+    from .crowd import at, relief
+
+    if not (place.lat and place.lon):
+        return CROWD_UNKNOWN, "혼잡 관측 지역 밖 — 순위에 영향 없음"
+    got = at(place.lat, place.lon)
+    if not got:
+        return CROWD_UNKNOWN, "혼잡 관측 지역 밖 — 순위에 영향 없음"
+    v = CROWD_SCORE.get(got["level"], CROWD_UNKNOWN)
+    bits = [got["level"]]
+    if got.get("max"):
+        bits.append(f"지금 {got['min']:,}~{got['max']:,}명")
+    if got.get("visitor_rate"):
+        bits.append(f"외지인 {got['visitor_rate']:.0f}%")
+    ease = relief(got)
+    if ease and ease.get("at"):
+        bits.append(f"{ease['at'][11:16]} 이후 여유")
+    return v, " · ".join(bits)
 
 
 def _trend_note(place, profile) -> str:
@@ -299,9 +333,10 @@ def rank(cands, origin, taste=None, pop: dict | None = None,
 
         aff = taste.affinity(p) if taste is not None else 0.0
         mom, _ = _momentum_of(p)
+        crowd, _ = _crowd_of(p)
         score = (near * W_NEAR + q * W_QUALITY
                  + popular * W_POPULAR + mom * W_MOMENTUM
-                 + max(0.0, aff) * W_TASTE)
+                 + crowd * W_CROWD + max(0.0, aff) * W_TASTE)
         if aff < 0:
             score += aff * W_TASTE        # 싫어하는 쪽은 감점
         fit = _trend_fit(p, profile)

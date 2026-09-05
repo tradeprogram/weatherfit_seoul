@@ -7,6 +7,7 @@
 아니라 표기 규칙이다. 비짓서울 원문(운영시간·휴무일)도 손대지 않는다 —
 영업시간 원문을 어설프게 옮기면 없는 정보를 만든다.
 """
+import io
 import re
 
 import pytest
@@ -104,6 +105,57 @@ class TestLiveResponse:
         assert r.status_code == 200
         left = self._scan(r.json())
         assert not left, f"영어 응답에 한글이 남았다: {left[:6]}"
+
+
+class TestUnitParity:
+    """숫자에 붙는 단위 규칙도 서버와 화면이 같아야 한다.
+
+    구절 표(PHRASES↔KO2EN)만 맞춰 두고 단위 규칙을 잊었더니 화면에
+    '588 views 조회'가 남았다. 서버에는 '회 조회'를 한 덩어리로 보는
+    규칙이 있는데 화면에 없어서 일반 규칙이 먼저 '회'만 먹은 것이다.
+    """
+
+    # 화면에 일부러 두지 않는 규칙과 그 이유.
+    EXEMPT = {
+        "실제": "일정 메모는 서버가 옮겨서 내려준다 — notes는 localize를 지난다",
+        "호선": "지하철 안내는 비짓서울 원문이라 손대지 않는다",
+        "개": "'3개'는 우리 문장에 안 쓴다 — 화면에서 '개월'을 깨뜨릴 위험만 남는다",
+    }
+
+    def js_units(self):
+        s = io.open("web/app.js", encoding="utf-8").read()
+        i = s.index("const KO_UNITS")
+        return s[i:s.index("];", i)]
+
+    def words(self, pat):
+        """규칙이 잡는 한국어 낱말. '개'와 '개월'을 섞지 않으려면
+        부분 문자열이 아니라 낱말 단위로 봐야 한다."""
+        return set(re.findall(r"[가-힣]+", pat))
+
+    def test_서버_규칙이_화면에도_있다(self):
+        from weatherfit.i18n import UNITS
+
+        js = self.js_units()
+        missing = [pat for pat, _ in UNITS
+                   if not (self.words(pat) & set(self.EXEMPT)) and pat not in js]
+        assert not missing, f"화면 단위 규칙에 빠짐: {missing}"
+
+    def test_긴_규칙이_먼저_온다(self):
+        """정규식은 먼저 맞는 것이 이긴다. '회'가 '회 조회'보다 앞에
+        오면 조회수 문장이 반만 옮겨진다."""
+        js = self.js_units()
+        assert js.index(r"회\s*조회") < js.index(r"([\d,]+)\s*회/g")
+
+    def test_혼잡_한_줄이_다_옮겨진다(self):
+        """선정 근거의 혼잡 줄은 steps 안이라 서버가 손대지 않는다.
+        화면이 못 옮기면 영어 화면에 한국어가 그대로 남는다."""
+        from weatherfit.i18n import has_korean, to_en
+
+        line = "약간 붐빔 · 지금 10,000~12,000명 · 외지인 35% · 15:00 이후 여유"
+        assert not has_korean(to_en(line))
+        js = self.js_units()
+        for token in ("외지인", "이후 여유", "명"):
+            assert token in js
 
 
 class TestChrome:

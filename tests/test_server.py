@@ -57,6 +57,79 @@ class TestWhere:
                           params={"lat": "a", "lon": "b"}).status_code == 422
 
 
+class TestSearch:
+    """지명 검색. 내 위치가 아닌 곳도 보게 하는 입구다."""
+
+    def test_동네_이름으로_찾는다(self, client):
+        d = client.get("/api/search", params={"q": "성수"}).json()
+        assert d["items"]
+        assert {"area", "dong"} & {r["kind"] for r in d["items"]}
+
+    def test_좌표가_서울_안이다(self, client):
+        """엉뚱한 좌표로 보내면 검색이 없느니만 못하다."""
+        for r in client.get("/api/search", params={"q": "홍대"}).json()["items"]:
+            assert 37.4 <= r["lat"] <= 37.7
+            assert 126.7 <= r["lon"] <= 127.2
+
+    def test_지역이_장소보다_앞에_온다(self, client):
+        """'홍대'를 친 사람은 홍대라는 동네를 찾는 것이지
+        '홍대닭갈비'를 찾는 것이 아니다."""
+        items = client.get("/api/search", params={"q": "홍대"}).json()["items"]
+        assert items[0]["kind"] in ("area", "dong")
+
+    def test_로마자로도_찾는다(self, client):
+        """영어 화면을 쓰는 사람은 'Seongsu'라고 친다. 한글 이름만
+        들고 있으면 정작 이 서비스가 겨냥한 사람이 못 찾는다."""
+        for q, ko in [("Seongsu", "성수"), ("hongdae", "홍대"),
+                      ("Gyeongbok", "경복궁"), ("Myeongdong", "명동")]:
+            items = client.get("/api/search", params={"q": q}).json()["items"]
+            assert items and items[0]["name"] == ko, q
+            assert items[0]["en"]
+
+    def test_없는_이름은_빈_목록(self, client):
+        """지어낸 좌표를 주느니 없다고 한다."""
+        assert client.get("/api/search",
+                          params={"q": "없는지명xyz"}).json()["items"] == []
+
+    def test_한_글자는_찾지_않는다(self, client):
+        """타이핑 중간마다 3,788건을 훑을 이유가 없다."""
+        assert client.get("/api/search", params={"q": "성"}).json()["items"] == []
+
+    def test_같은_자리를_두_번_주지_않는다(self, client):
+        items = client.get("/api/search", params={"q": "경복궁"}).json()["items"]
+        keys = [(round(r["lat"], 4), round(r["lon"], 4)) for r in items]
+        assert len(keys) == len(set(keys))
+
+    def test_개수를_넘기지_않는다(self, client):
+        assert len(client.get("/api/search",
+                              params={"q": "서울", "limit": 3}).json()["items"]) <= 3
+
+
+class TestMealPlan:
+    """끼니를 고르면 그 시간대에 식당이 하나 들어간다."""
+
+    def test_점심을_고르면_점심에_식당이_있다(self, client):
+        d = client.post("/api/plan", json={
+            **SEOUL, "at": "2026-09-03T11:00", "hours": 5,
+            "meals": ["lunch"], "mode": "clear"}).json()
+        lunch = [s for s in d["steps"]
+                 if 11 <= int(s["arrive"][:2]) < 15 and s["role"] == "food"]
+        # 못 넣었으면 못 넣었다고 말해야 한다. 조용히 빠지는 것만 막는다.
+        assert lunch or any("점심" in n for n in d["notes"])
+
+    def test_안_고르면_끼니를_두고_잔소리하지_않는다(self, client):
+        d = client.post("/api/plan",
+                        json={**SEOUL, "at": AT, "hours": 4,
+                              "mode": "clear"}).json()
+        assert not any("찾지 못했습니다" in n for n in d["notes"])
+
+    def test_모르는_끼니에_500이_나지_않는다(self, client):
+        r = client.post("/api/plan", json={
+            **SEOUL, "at": AT, "hours": 4,
+            "meals": ["brunch"], "mode": "clear"})
+        assert r.status_code == 200
+
+
 class TestCandidates:
     def test_반경_안에서만_준다(self, client):
         d = client.get("/api/candidates",

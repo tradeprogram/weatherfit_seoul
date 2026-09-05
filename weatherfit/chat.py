@@ -46,6 +46,24 @@ LANDMARKS: dict[str, tuple[float, float]] = {
     "대학로": (37.5822, 127.0019), "서촌": (37.5787, 126.9700),
 }
 
+# 로마자 표기. 영어 화면을 쓰는 사람은 'Seongsu'라고 친다 — 한글 이름만
+# 들고 있으면 정작 이 서비스가 겨냥한 사람이 아무것도 못 찾는다.
+# 행정동 424개까지 옮기지는 않는다. 검색해서 쓸모 있는 이름은 동네 쪽이고,
+# 여기 32개가 그 대부분이다.
+LANDMARK_EN: dict[str, str] = {
+    "홍대": "Hongdae", "합정": "Hapjeong", "연남": "Yeonnam",
+    "망원": "Mangwon", "성수": "Seongsu", "서울숲": "Seoul Forest",
+    "건대": "Konkuk Univ.", "명동": "Myeongdong", "인사동": "Insadong",
+    "북촌": "Bukchon", "삼청동": "Samcheong-dong", "익선동": "Ikseon-dong",
+    "을지로": "Euljiro", "종로": "Jongno", "광화문": "Gwanghwamun",
+    "경복궁": "Gyeongbokgung", "이태원": "Itaewon", "한남": "Hannam",
+    "여의도": "Yeouido", "잠실": "Jamsil", "가로수길": "Garosu-gil",
+    "압구정": "Apgujeong", "청담": "Cheongdam", "강남역": "Gangnam Stn.",
+    "신촌": "Sinchon", "동대문": "Dongdaemun", "남산": "Namsan",
+    "DDP": "DDP", "노량진": "Noryangjin", "혜화": "Hyehwa",
+    "대학로": "Daehak-ro", "서촌": "Seochon",
+}
+
 GU_SHORT = ("종로|중구|용산|성동|광진|동대문|중랑|성북|강북|도봉|노원|은평|"
             "서대문|마포|양천|강서|구로|금천|영등포|동작|관악|서초|강남|송파|강동")
 

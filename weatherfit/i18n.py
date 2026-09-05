@@ -92,10 +92,37 @@ PHRASES: dict[str, str] = {
     "아직 조용함": "Still quiet",
 
     # ── 혼잡 (서울시 실시간 도시데이터가 한국어만 준다)
+    # '덜 붐빔'을 따로 두지 않으면 '붐빔'만 잡혀 '덜 Crowded'가 된다.
+    # 긴 키가 먼저 맞으므로 이 한 줄이 그걸 막는다.
+    "덜 붐빔": "Less crowded",
+    "혼잡 관측 지역 밖 — 순위에 영향 없음":
+        "Outside the live-crowding areas — no effect on ranking",
     "붐빔": "Crowded",
     "약간 붐빔": "Somewhat crowded",
     "보통": "Moderate",
     "여유": "Not busy",
+
+    # ── 끼니
+    "식사": "Meals",
+    "아침": "Breakfast",
+    "점심": "Lunch",
+    "저녁": "Dinner",
+    "아침(7~11시)에 넣을 식당을 찾지 못했습니다.":
+        "Could not fit a place to eat into breakfast (07–11).",
+    "점심(11~15시)에 넣을 식당을 찾지 못했습니다.":
+        "Could not fit a place to eat into lunch (11–15).",
+    "저녁(17~21시)에 넣을 식당을 찾지 못했습니다.":
+        "Could not fit a place to eat into dinner (17–21).",
+
+    # ── 장소 검색
+    "지명·장소로 찾기 (예: 성수, 경복궁)":
+        "Search an area or place (e.g. Seongsu, Gyeongbokgung)",
+    "장소 검색": "Place search",
+    "찾지 못했습니다": "No match",
+    "내 위치로": "Back to my location",
+    "자세히 보기": "See details",
+    "지역": "Area",
+    "행정동": "Neighborhood",
 
     # ── 근거 항목
     "가까움": "Nearby",
@@ -227,6 +254,15 @@ PHRASES: dict[str, str] = {
 # 숫자에 붙는 단위는 낱말로 바꾸면 다른 말을 망가뜨린다. '조회'가 '조x'가
 # 되고 '분위기'가 'min위기'가 된다. 숫자가 앞에 붙을 때만 바꾼다.
 UNITS: list[tuple[str, str]] = [
+    # 숫자가 가운데 든 문장은 구절 표에 담을 수 없다. 통째로 규칙을 둔다 —
+    # 반만 옮겨져 "뒤쪽 1 places을 뺐습니다"가 되는 것이 제일 나쁘다.
+    (r"실제 이동시간으로 다시 계산해 뒤쪽 ([\d,]+)곳을 뺐습니다\.",
+     r"Recalculated with real travel times; dropped the last \1 stop(s)."),
+    (r"지금\s*([\d,]+)\s*~\s*([\d,]+)\s*명",
+     r"\1–\2 people right now"),
+    (r"외지인\s*([\d.]+)\s*%", r"\1% visitors"),
+    (r"(\d{1,2}:\d{2})\s*이후 여유", r"eases after \1"),
+    (r"([\d,]+)\s*명", r"\1 people"),
     (r"연\s*([\d,]+)\s*회\s*조회", r"\1 views/yr"),
     (r"연\s*([\d,]+)\s*회", r"\1 views/yr"),
     (r"([\d,]+)\s*회\s*조회", r"\1 views"),
