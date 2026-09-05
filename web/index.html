@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-title" content="웨더핏 서울">
 <meta name="description" content="관심과 방문을 갈라 재어, 뜨고 있지만 아직 붐비지 않는 서울을 찾아 드립니다">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=85">
+<link rel="stylesheet" href="style.css?v=96">
 </head>
 <body>
 
@@ -52,9 +52,7 @@
   <div class="topstats" id="head-stats"></div>
   <div class="lang-seg" id="lang-seg" role="group" aria-label="언어">
     <button data-lang="ko" class="on">한국어</button>
-    <button data-lang="en">EN</button>
-    <button data-lang="ja">日本</button>
-    <button data-lang="zh-CN">中文</button>
+    <button data-lang="en">English</button>
   </div>
   <button class="icon-btn" id="help-btn" title="이용 안내" aria-label="이용 안내">?</button>
   </div>
@@ -63,40 +61,40 @@
 <aside class="panel panel-left glass">
   <nav class="tabs" id="tabs" role="tablist" aria-label="화면 전환">
     <button data-tab="plan" class="on" role="tab" aria-selected="true"
-            aria-controls="pane-plan" id="tab-plan">일정</button>
+            aria-controls="pane-plan" id="tab-plan" data-en="Plan">일정</button>
     <button data-tab="list" role="tab" aria-selected="false"
-            aria-controls="pane-list" id="tab-list">주변</button>
+            aria-controls="pane-list" id="tab-list" data-en="Nearby">주변</button>
     <button data-tab="evidence" role="tab" aria-selected="false"
-            aria-controls="pane-evidence" id="tab-evidence">근거</button>
+            aria-controls="pane-evidence" id="tab-evidence" data-en="Evidence">근거</button>
   </nav>
 
   <!-- 일정 -->
   <section class="pane" id="pane-plan" role="tabpanel" aria-labelledby="tab-plan">
     <div class="controls">
       <div class="ctl">
-        <span class="lbl">언제부터</span>
+        <span class="lbl" data-en="From">언제부터</span>
         <input type="datetime-local" id="at">
       </div>
       <div class="ctl">
-        <span class="lbl">얼마나</span>
+        <span class="lbl" data-en="How long">얼마나</span>
         <div class="seg small" id="hours-seg">
-          <button data-h="2">2시간</button>
-          <button data-h="3">3시간</button>
-          <button data-h="4" class="on">4시간</button>
-          <button data-h="6">6시간</button>
+          <button data-h="2" data-en="2 hrs">2시간</button>
+          <button data-h="3" data-en="3 hrs">3시간</button>
+          <button data-h="4" class="on" data-en="4 hrs">4시간</button>
+          <button data-h="6" data-en="6 hrs">6시간</button>
         </div>
       </div>
       <div class="ctl">
-        <span class="lbl">날씨</span>
+        <span class="lbl" data-en="Weather">날씨</span>
         <div class="seg small" id="mode-seg">
-          <button data-mode="auto" class="on">실시간</button>
-          <button data-mode="clear">맑음</button>
-          <button data-mode="rain">비</button>
-          <button data-mode="heat">폭염</button>
+          <button data-mode="auto" class="on" data-en="Live">실시간</button>
+          <button data-mode="clear" data-en="Clear">맑음</button>
+          <button data-mode="rain" data-en="Rain">비</button>
+          <button data-mode="heat" data-en="Heat">폭염</button>
         </div>
       </div>
       <div class="ctl ctl-top">
-        <span class="lbl">관심사</span>
+        <span class="lbl" data-en="Interests">관심사</span>
         <div class="interests" id="interests">
           <button data-i="음식">🍚 음식</button>
           <button data-i="문화관광">🎨 문화</button>
@@ -108,16 +106,16 @@
       </div>
 
       <div class="ctl">
-        <span class="lbl">동네</span>
+        <span class="lbl" data-en="Area">동네</span>
         <div class="seg small" id="quiet-seg">
-          <button data-q="" class="on">전체</button>
-          <button data-q="1" title="방문이 느는데 아직 붐비지 않는 행정동만">
+          <button data-q="" class="on" data-en="All">전체</button>
+          <button data-q="1" title="방문이 느는데 아직 붐비지 않는 행정동만" data-en="Still quiet">
             아직 조용한 곳</button>
         </div>
       </div>
 
       <div class="ctl ctl-top">
-        <span class="lbl" title="2026 서울관광 트렌드 VITALITY 기반">여행 스타일</span>
+        <span class="lbl" title="2026 서울관광 트렌드 VITALITY 기반" data-en="Travel style">여행 스타일</span>
         <div class="interests styles" id="styles">
           <button data-s="local">🏘 동네 살아보기</button>
           <button data-s="content">🎭 공연·전시</button>
@@ -130,14 +128,14 @@
 
     <div class="taste-bar" id="taste-bar" hidden>
       <span class="taste-txt" id="taste-txt"></span>
-      <button id="taste-reset">초기화</button>
+      <button id="taste-reset" data-en="Reset">초기화</button>
     </div>
 
     <div class="plan-head" id="plan-head" aria-live="polite"></div>
     <div class="move-card" id="move-card" aria-live="polite"></div>
     <div class="plan-acts">
-      <button id="save-btn">💾 저장</button>
-      <button id="share-btn">🔗 공유</button>
+      <button id="save-btn" data-en="💾 Save">💾 저장</button>
+      <button id="share-btn" data-en="🔗 Share">🔗 공유</button>
       <button id="vault-btn">📁 보관함<span id="vault-count"></span></button>
     </div>
     <div class="vault" id="vault" hidden></div>
@@ -171,13 +169,13 @@
 
 <div class="map-ctl">
   <div class="seg-map glass" role="group" aria-label="지도 모드">
-    <button class="on" data-map="plain" aria-pressed="true">지도</button>
-    <button data-map="area" aria-pressed="false">📈 동네 모멘텀</button>
-    <button data-map="lst" aria-pressed="false">🛰 지표온도</button>
+    <button class="on" data-map="plain" aria-pressed="true" data-en="Map">지도</button>
+    <button data-map="area" aria-pressed="false" data-en="📈 Area momentum">📈 동네 모멘텀</button>
+    <button data-map="lst" aria-pressed="false" data-en="🛰 Surface heat">🛰 지표온도</button>
   </div>
-  <button class="glass on" id="btn-dong" aria-pressed="true">행정동</button>
-  <button class="glass" id="btn-all" aria-pressed="false">주변 전체</button>
-  <button class="glass" id="btn-me" title="내 위치로">내 위치</button>
+  <button class="glass on" id="btn-dong" aria-pressed="true" data-en="Districts">행정동</button>
+  <button class="glass" id="btn-all" aria-pressed="false" data-en="All nearby">주변 전체</button>
+  <button class="glass" id="btn-me" title="내 위치로" data-en="My location">내 위치</button>
 </div>
 
 
@@ -264,7 +262,7 @@
 <div class="overlay" id="help-overlay" hidden>
   <div class="help-card glass">
     <div class="help-head">
-      <h2>이용 안내</h2>
+      <h2 data-en="How it works">이용 안내</h2>
       <button class="close-btn" id="help-close" aria-label="닫기">×</button>
     </div>
 
@@ -303,6 +301,6 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=85"></script>
+<script src="app.js?v=96"></script>
 </body>
 </html>

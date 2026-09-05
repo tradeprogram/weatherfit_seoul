@@ -277,7 +277,7 @@ def josa(word: str, kind: str = "로") -> str:
     return pair[1] if jong else pair[0]
 
 
-def local_answer(agent: dict) -> str:
+def local_answer(agent: dict, lang: str = "ko") -> str:
     """키가 없을 때의 답. 도구가 이미 다 돌았으니 옮겨 적기만 하면 된다."""
     course = agent["course"]
     steps = course.get("steps") or []
@@ -355,16 +355,24 @@ def _leg_text(step: dict) -> str:
     return f"{mode} {leg['minutes']}분{tag}{extra}"
 
 
+def _en(text: str, payload: dict) -> str:
+    """LLM이 없을 때 쓰는 템플릿 답변도 영어로 옮긴다."""
+    if payload.get("lang") != "en":
+        return text
+    from .i18n import to_en
+    return to_en(text)
+
+
 def compose(payload: dict, agent: dict, llm: LLM | None = None) -> tuple[str, str]:
     """(답변, engine). LLM이 있으면 산문만 맡기고, 없으면 템플릿."""
     llm = llm or LLM()
     if not llm.available:
-        return local_answer(agent), "rules"
+        return _en(local_answer(agent), payload), "rules"
     try:
         text = llm._call(_prompt(payload, agent), max_tokens=700)
         return text.strip(), "llm"
     except Exception:
-        return local_answer(agent), "rules"
+        return _en(local_answer(agent), payload), "rules"
 
 
 def _prompt(payload: dict, agent: dict) -> str:
@@ -398,4 +406,9 @@ def _prompt(payload: dict, agent: dict) -> str:
         f"메모: {' / '.join(course.get('notes') or []) or '없음'}",
         "",
         "위 내용을 사람 말로 옮겨 답해라.",
+        # 화면이 영어면 답도 영어여야 한다. 도구 결과는 한국어로 넘기고
+        # 서술만 영어로 시키는 편이 낫다 — 장소명을 억지로 옮기면
+        # 현지에서 못 찾는다.
+        ("Answer in English. Keep place names as given."
+         if payload.get("lang") == "en" else ""),
     ])

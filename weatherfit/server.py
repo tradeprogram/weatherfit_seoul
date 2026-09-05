@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .chat import LANDMARKS, Intent, compose_reply, parse_intent
+from .i18n import localize, to_en
 from .momentum import badge as trend_badge
 from .popularity import scores as popularity_scores
 from .taste import PARTY_AVOID, PARTY_TAGS, Taste, mood_interests
@@ -237,10 +238,10 @@ def candidates(lat: float = SEOUL_CITY_HALL[0], lon: float = SEOUL_CITY_HALL[1],
         v, detail = evaluate_place(p, when, w)
         if v.ok is not True:
             continue
-        rows.append(_row(p, v, detail, lat, lon, lang))
+        rows.append(localize(_row(p, v, detail, lat, lon, lang), lang))
 
     rows.sort(key=lambda r: r["distance_m"])
-    return {"weather": weather_now(lat, lon, mode, at),
+    return {"weather": localize(weather_now(lat, lon, mode, at), lang),
             "count": len(rows), "items": rows[:limit]}
 
 
@@ -287,7 +288,7 @@ def make_course(lat: float, lon: float, mode: str = "auto",
         taste=taste, exclude=set(exclude or []), avoid=avoid,
         profile=profile,
     )
-    out = c.to_dict(lang)
+    out = localize(c.to_dict(lang), lang)
     out["engine"] = "rules"
     out["lang"] = lang
     out["origin"] = {"lat": lat, "lon": lon, "moved_to_seoul": moved}
