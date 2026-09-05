@@ -32,6 +32,7 @@
 | `VISITSEOUL_API_KEY` | 저장소에 든 수집본 사용 |
 | `ODSAY_API_KEY` | 대중교통 시간 추정 |
 | `ODSAY_REFERER` | (기본 `https://weatherfit-seoul.vercel.app`) |
+| `SEOUL_RTD_KEY` | 실시간 혼잡 없음 — 배지가 안 뜨고 '지금 붐빔' 판단을 못 한다 |
 | `TMAP_APP_KEY` | 공개 OSRM으로 도보 실측 (느리고 스로틀이 있다) |
 
 서비스 이름을 바꾸면 주소도 바뀌므로 `vercel.json`의 rewrite 대상도 같이
