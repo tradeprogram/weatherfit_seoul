@@ -376,7 +376,10 @@ def divergence(a: dict, b: dict) -> dict:
     # 비율과 z점수를 빼면 뜻이 없는 수가 나온다. 실제로 0.3과 6.9를 빼서
     # -6.6이라는 답을 내고 '크게 어긋난다'고 말한 적이 있다. 단위가 다르면
     # 모른다고 하는 편이 낫다.
-    if a.get("scale") != b.get("scale"):
+    # scale이 없는 축은 이 필드가 생기기 전에 만들어진 것이다. axes()의
+    # 기본값과 같이 '이어지는 양'으로 본다 — 없다고 비교를 거부하면
+    # 옛 자료가 통째로 죽는다.
+    if a.get("scale", CONTINUOUS) != b.get("scale", CONTINUOUS):
         return {"gap": None, "notable": False, "lead": None,
                 "why": "자료의 성질이 달라 같은 자로 비교할 수 없습니다"}
     gap = excess(a) - excess(b)
@@ -861,6 +864,53 @@ def badge(entity: str, name: str = "wikipedia") -> dict | None:
             "level": row["axes"]["level"]}
 
 
+def crosswalk(a: str, b: str) -> dict:
+    """개체 종류가 다른 두 소스를 잇는다. 장소는 제가 속한 행정동을 통해 잰다.
+
+    관심(위키백과)은 장소 단위고 방문(유동인구)은 행정동 단위다. 그대로
+    두면 겹치는 개체가 하나도 없어 비교가 시작되지 않는다 — 축을 하나 더
+    만드는 것과 비교할 수 있게 되는 것은 다른 일이다.
+
+    행정동으로 잇는 것은 근사다. 경복궁의 방문 모멘텀은 사직동 전체의
+    것이지 경복궁만의 것이 아니다. 그래도 뜻이 있다 — 우리가 묻는 것이
+    "이 장소가 있는 동네가 실제로 뜨고 있나"이기 때문이다.
+    """
+    ea = (table(a).get("meta") or {}).get("entity")
+    eb = (table(b).get("meta") or {}).get("entity")
+    if ea == eb:
+        return {}
+    place, dong = (a, b) if (ea, eb) == ("place", "dong") else (b, a)
+    if {ea, eb} != {"place", "dong"}:
+        return {}
+
+    # 이름으로 맞추지 않는다. 행정동 표기는 체계마다 갈리고(11110515 대
+    # 11010530), 이름도 '종로1·2·3·4가동'처럼 구분자가 흔들린다. 좌표로
+    # 붙이면 그런 사고가 없다 — 행안부 코드가 든 경계와 직접 공간 조인한다.
+    out = {}
+    try:
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        from .index import build_index
+        from .report import load
+
+        gdf = gpd.read_file(ROOT / "data" / "footfall" / "seoul_dong_mois.geojson")
+        pls = [p for p in build_index(load()).places if p.lat and p.lon]
+        pts = gpd.GeoDataFrame({"cid": [p.cid for p in pls]},
+                               geometry=[Point(p.lon, p.lat) for p in pls],
+                               crs="EPSG:4326")
+        joined = gpd.sjoin(pts, gdf[["adm_cd8", "geometry"]],
+                           how="left", predicate="within")
+        known = set(table(dong).get("series") or {})
+        for row in joined.itertuples():
+            code = getattr(row, "adm_cd8", None)
+            if isinstance(code, str) and code in known:
+                out[row.cid] = code
+    except Exception as e:
+        print(f"  행정동 잇기 실패: {e}")
+    return {"place_source": place, "dong_source": dong, "map": out}
+
+
 def compare(entity: str, a: str, b: str) -> dict | None:
     """두 소스가 같은 개체를 두고 하는 말을 나란히 놓는다."""
     ra, rb = of(entity, a), of(entity, b)
@@ -932,9 +982,22 @@ def main() -> None:
 
     if a.action == "diverge":
         one, two = table(a.name), table(a.against)
-        rows = [(e, one["series"][e], two["series"][e])
-                for e in set(one.get("series", {})) & set(two.get("series", {}))
-                if one["series"][e].get("score") and two["series"][e].get("score")]
+        cw = crosswalk(a.name, a.against)
+        if cw:
+            # 장소 ↔ 행정동. 장소 쪽을 기준으로 짝을 만든다.
+            pl, dg = cw["place_source"], cw["dong_source"]
+            ps, ds = table(pl)["series"], table(dg)["series"]
+            rows = [(c, ps[c], ds[cw["map"][c]]) for c in cw["map"]
+                    if c in ps and ps[c].get("score")
+                    and cw["map"][c] in ds and ds[cw["map"][c]].get("score")]
+            a.name, a.against = pl, dg
+            print(f"장소를 제가 속한 행정동으로 이어 비교합니다 "
+                  f"({len(cw['map'])}곳 연결)")
+        else:
+            rows = [(e, one["series"][e], two["series"][e])
+                    for e in set(one.get("series", {})) & set(two.get("series", {}))
+                    if one["series"][e].get("score")
+                    and two["series"][e].get("score")]
         print(f"{a.name} ↔ {a.against} · 양쪽 다 계산된 개체 {len(rows)}개")
         if not rows:
             print()
@@ -945,7 +1008,7 @@ def main() -> None:
 
         scored = sorted(
             ((e, x, y, divergence(x["axes"], y["axes"])) for e, x, y in rows),
-            key=lambda t: -abs(t[3]["gap"]))
+            key=lambda t: -abs(t[3]["gap"] or 0.0))
         hit = [t for t in scored if t[3]["notable"]]
         print(f"뚜렷하게 어긋나는 곳 {len(hit)}개 "
               f"(전년비 {DIVERGE_MIN * 100:.0f}%p 이상)")
