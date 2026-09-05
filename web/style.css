@@ -802,3 +802,34 @@ body.lst-on .leaflet-layer.basemap{filter:saturate(.12) brightness(1.16) contras
   border-radius:999px}
 .move-tag.exact{background:rgba(34,160,107,.14);color:#1a7a52}
 .move-tag.est{background:rgba(240,138,52,.16);color:#b56a1e}
+
+/* ───────── 동네 방문 모멘텀 ───────── */
+
+/* 발산 램프. 0을 가운데 두고 양쪽을 반대 색으로 가른다 — 순차 램프를
+   쓰면 '안 변한 곳'과 '줄어든 곳'이 같은 끝에 몰려 구분이 안 된다. */
+.legend-area .ramp i{flex:1;height:9px}
+.legend-area .ramp{display:flex;border-radius:3px;overflow:hidden;margin:7px 0 4px}
+.legend-area .ramp-ax{display:flex;justify-content:space-between;
+  font-size:10px;color:var(--ink-3)}
+.legend-area .ramp-brk{display:flex;align-items:center;gap:5px;
+  margin:7px 0 0;font-size:10.5px;color:var(--ink-2)}
+.legend-area .ramp-brk b#area-quiet{margin-left:auto;color:var(--ink)}
+.quiet-key{display:inline-block;width:13px;height:9px;border-radius:2px;
+  background:#7bbfa8;border:2px solid #1c6b56;box-sizing:content-box}
+
+/* 아직 조용한 동네에 있는 곳 */
+.badge.quiet{background:#e4f2ec;color:#1c6b56}
+
+/* 조용한 곳 필터가 비었을 때 — 빈 화면 대신 방향을 준다 */
+.quiet-empty{padding:13px 14px;margin-bottom:10px;border-radius:12px;
+  background:#eef6f2;border:1px solid rgba(28,107,86,.18)}
+.quiet-empty[hidden]{display:none}
+.quiet-empty p{margin:0;font-size:12px;color:var(--ink-2);line-height:1.65}
+.quiet-empty .q-h{margin-top:9px;font-size:11px;color:#1c6b56;font-weight:600}
+.quiet-empty ul{list-style:none;margin:6px 0 0;padding:0}
+.quiet-empty li{display:flex;align-items:baseline;gap:7px;font-size:12px;
+  padding:3px 0}
+.quiet-empty li em{font-style:normal;font-weight:700;color:#1c6b56;
+  font-variant-numeric:tabular-nums}
+.quiet-empty li span{margin-left:auto;color:var(--ink-3);font-size:11px;
+  font-variant-numeric:tabular-nums}

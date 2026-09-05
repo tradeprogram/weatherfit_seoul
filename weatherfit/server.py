@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from collections import Counter
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -198,7 +199,7 @@ def _row(p, verdict, detail, lat, lon, lang: str = "ko") -> dict:
         "cid": c.cid, "title": t["title"], "category": c.category,
         "category_path": t["category_path"], "summary": (t["summary"] or "")[:120],
         "lat": p.lat, "lon": p.lon, "address": t["address"],
-        "gu": p.gu, "dong": p.dong,
+        "gu": p.gu, "dong": p.dong, "adm_cd": getattr(p, "adm_cd", ""),
         "tags": (t["tags"] or [])[:4], "subway": t["subway"],
         "use_time": t["use_time"], "closed_days": t["closed_days"],
         "text_lang": t["lang"],
@@ -362,6 +363,62 @@ def thermal_map():
     from .remote import table
     t = table()
     return {"meta": t.get("meta", {}), "dong": t.get("dong", {})}
+
+
+@app.get("/api/area")
+def area_trend():
+    """행정동별 방문 모멘텀. 지도의 '동네' 모드와 '조용한 곳' 필터가 쓴다.
+
+    유동인구는 행안부 행정동코드(11110515)를 쓰고 지도 경계는 서울시
+    체계(11010530)를 쓴다. 두 체계를 잇는 표를 만들 것도 없이 구·동
+    이름이 97.7% 맞으므로 이름으로 붙이고, 화면이 쓰는 쪽 코드로 내보낸다.
+    """
+    from .momentum import LABEL, excess, table
+
+    t = table("footfall")
+    rows = t.get("series") or {}
+    if not rows:
+        return {"meta": {}, "dong": {}, "quiet": []}
+
+    web = _dong_name_to_code()
+    lv = sorted(r["axes"]["level"] for r in rows.values() if r.get("axes"))
+    median = lv[len(lv) // 2] if lv else 0.0
+
+    out, quiet = {}, []
+    for r in rows.values():
+        a = r.get("axes")
+        code = web.get(r.get("label", ""))
+        if not a or not code:
+            continue
+        m = excess(a)
+        # '아직 조용한 곳' — 뜨는데 아직 안 붐빈다. 이 사분면이 제품이다.
+        is_quiet = m >= QUIET_RISE and a["level"] <= median
+        out[code] = {"name": r["label"], "momentum": round(m, 4),
+                     "level": a["level"], "trend": r["trend"],
+                     "label": LABEL.get(r["trend"], ""), "quiet": is_quiet}
+        if is_quiet:
+            quiet.append(code)
+    return {"meta": {"dong": len(out), "median_level": median,
+                     "quiet_rise": QUIET_RISE, "quiet": len(quiet),
+                     "months": (t.get("meta") or {}).get("rows"),
+                     "source": "서울 열린데이터광장 단기체류 외국인 생활인구"},
+            "dong": out, "quiet": quiet}
+
+
+QUIET_RISE = 0.15          # 이만큼 늘면 '뜨는 중'으로 본다
+
+
+@lru_cache(maxsize=1)
+def _dong_name_to_code() -> dict:
+    """'구 동' → 지도 경계의 adm_cd."""
+    import json as _json
+    p = Path(__file__).resolve().parent.parent / "web" / "data" / "seoul_dong.geojson"
+    try:
+        gj = _json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return {f"{f['properties']['gu']} {f['properties']['dong']}":
+            f["properties"]["adm_cd"] for f in gj.get("features", [])}
 
 
 class ReplanIn(BaseModel):

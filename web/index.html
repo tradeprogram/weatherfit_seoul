@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#eaf4fb">
-<title>웨더핏 서울 — 오늘 날씨에, 트렌디하게, 지금 열려 있는 곳만</title>
+<title>웨더핏 서울 — 뜨고 있지만 아직 붐비지 않는 곳</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
@@ -13,9 +13,9 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="웨더핏 서울">
-<meta name="description" content="오늘 날씨에, 트렌디하게, 지금 열려 있는 곳만 골라 짜는 서울 반나절 코스">
+<meta name="description" content="관심과 방문을 갈라 재어, 뜨고 있지만 아직 붐비지 않는 서울을 찾아 드립니다">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=77">
+<link rel="stylesheet" href="style.css?v=84">
 </head>
 <body>
 
@@ -28,7 +28,7 @@
     <img class="logo" src="img/logo.png" alt="웨더핏 서울" width="537" height="180">
     <div class="brand-txt">
       <h1 class="sr-only">웨더핏 서울</h1>
-      <p>오늘 날씨에, 트렌디하게, 지금 열려 있는 곳만</p>
+      <p>뜨고 있지만 아직 붐비지 않는 곳</p>
     </div>
   </div>
 
@@ -107,6 +107,15 @@
         </div>
       </div>
 
+      <div class="ctl">
+        <span class="lbl">동네</span>
+        <div class="seg small" id="quiet-seg">
+          <button data-q="" class="on">전체</button>
+          <button data-q="1" title="방문이 느는데 아직 붐비지 않는 행정동만">
+            아직 조용한 곳</button>
+        </div>
+      </div>
+
       <div class="ctl ctl-top">
         <span class="lbl" title="2026 서울관광 트렌드 VITALITY 기반">여행 스타일</span>
         <div class="interests styles" id="styles">
@@ -142,6 +151,7 @@
   <section class="pane" id="pane-list" role="tabpanel" aria-labelledby="tab-list" hidden>
     <p class="hint" id="list-summary"></p>
     <div class="filters" id="cat-filters"></div>
+    <div class="quiet-empty" id="quiet-empty" hidden></div>
     <ul class="cand" id="cand-list"></ul>
   </section>
 
@@ -162,6 +172,7 @@
 <div class="map-ctl">
   <div class="seg-map glass" role="group" aria-label="지도 모드">
     <button class="on" data-map="plain" aria-pressed="true">지도</button>
+    <button data-map="area" aria-pressed="false">📈 동네 모멘텀</button>
     <button data-map="lst" aria-pressed="false">🛰 지표온도</button>
   </div>
   <button class="glass on" id="btn-dong" aria-pressed="true">행정동</button>
@@ -215,6 +226,15 @@
   <div class="legend-row"><span class="dot food"></span>식사·카페</div>
   <div class="legend-row"><span class="dot spot"></span>둘러볼 곳</div>
   <div class="legend-row"><span class="dot me"></span>내 위치</div>
+</div>
+
+<div class="legend legend-area glass" id="legend-area" hidden>
+  <div class="legend-head">동네 방문 모멘텀</div>
+  <div class="ramp" id="area-ramp"></div>
+  <div class="ramp-ax"><span>줄어듦</span><span>늘어남</span></div>
+  <p class="ramp-brk"><b class="quiet-key"></b> 아직 조용한 곳
+    <b id="area-quiet"></b></p>
+  <p class="legend-note" id="area-note"></p>
 </div>
 
 <div class="legend legend-lst glass" id="legend-lst" hidden>
@@ -283,6 +303,6 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=77"></script>
+<script src="app.js?v=84"></script>
 </body>
 </html>

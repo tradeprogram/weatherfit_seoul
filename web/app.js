@@ -13,7 +13,7 @@ const LS_VAULT = 'weatherfit.vault';
 const S = {
   lat:CITY_HALL[0], lon:CITY_HALL[1], accuracy:null, where:null, precise:false,
   mode:'auto', hours:4, at:null,
-  course:null, candidates:[], stats:null,
+  course:null, candidates:[], stats:null, area:null, quiet:false,
   catFilter:null, selected:null, showAll:false,
   mapMode:'plain', thermal:null, dongGeo:null, styles:[],
   history:[], intent:null, busy:false,
@@ -59,6 +59,10 @@ try {
     S.dongGeo = gj;
     layers.dong = L.geoJSON(gj, { style:dongStyle, interactive:false }).addTo(map);
     layers.dong.bringToBack();
+    /* 경계는 비동기로 온다. 그 사이에 사용자가 이미 지도 모드를 골랐으면
+       레이어가 기본 스타일로 붙어 아무것도 안 칠해진 채 남는다 — 실제로
+       빈 지도가 나왔다. 도착한 뒤 지금 모드를 한 번 다시 입힌다. */
+    if (S.mapMode && S.mapMode !== 'plain') setMapMode(S.mapMode);
   }).catch(e => console.warn('행정동 경계를 불러오지 못했습니다', e));
 } catch (e) {
   console.warn('지도를 만들지 못했습니다', e);
@@ -76,6 +80,21 @@ try {
    단조 명도, 단계 간격 0.06 이상, 표면 대비 2.03:1). */
 
 const LST_RAMP = ['#e29a64','#d47a33','#bb5c1d','#9c4514','#77330e','#522109'];
+
+/* 동네 모멘텀 — 발산 램프. 0을 가운데 두고 오르는 쪽과 내리는 쪽을
+   반대 색으로 가른다. 순차 램프를 쓰면 '안 변한 곳'과 '줄어든 곳'이
+   같은 끝에 몰려 구분이 안 된다. */
+/* 양쪽 모두 **옅은 쪽이 앞**이어야 한다. 처음에 하락 쪽만 진한 색을
+   앞에 뒀더니, 거의 안 변한 동네까지 최고 농도로 칠해져 208곳 중 181곳이
+   같은 진한 갈색이 됐다. 서울 전체가 무너지는 것처럼 보였다. */
+const AREA_RAMP = [['#d8c4bd','#b08575','#8c5a4a'],
+                   ['#c9dfd6','#7bbfa8','#2f8f74']];
+
+function areaColor(m) {
+  const a = Math.min(Math.abs(m), 0.6) / 0.6;
+  const side = AREA_RAMP[m >= 0 ? 1 : 0];
+  return side[Math.min(Math.floor(a * side.length), side.length - 1)];
+}
 
 /* 등간격으로 나누면 서울 대부분이 맨 위 칸에 몰려 지도가 통째로 진해진다.
    실제 분포가 더운 쪽으로 치우쳐 있기 때문이다. 그래서 분위(quantile)로
@@ -99,8 +118,21 @@ function quantiles(vals, n) {
 function dongStyle(f) {
   const base = { color:'#1f7ac4', weight:0.6, opacity:0.24,
                  fillColor:'#1f7ac4', fillOpacity:0.03 };
+  const cd = f.properties.adm_cd;
+
+  if (S.mapMode === 'area' && S.area) {
+    const row = S.area.dong[cd];
+    if (!row) return { color:'#fff', weight:0.5, opacity:0.3,
+                       fillColor:'#c9cdd2', fillOpacity:0.22 };
+    /* 조용히 뜨는 곳은 테두리를 굵게 준다. 색만으로는 '많이 뜬 곳'과
+       '뜨는데 아직 안 붐비는 곳'이 구분되지 않는데, 뒤가 제품이다. */
+    return { color: row.quiet ? '#1c6b56' : '#fff',
+             weight: row.quiet ? 2.0 : 0.5,
+             opacity: row.quiet ? 0.95 : 0.5,
+             fillColor: areaColor(row.momentum), fillOpacity:0.72 };
+  }
   if (S.mapMode !== 'lst' || !S.thermal) return base;
-  const row = S.thermal.dong[f.properties.adm_cd];
+  const row = S.thermal.dong[cd];
   const col = row ? lstColor(row.lst_c) : null;
   return col
     ? { color:'#fff', weight:0.5, opacity:0.5, fillColor:col, fillOpacity:0.78 }
@@ -114,9 +146,21 @@ async function setMapMode(mode) {
     b.classList.toggle('on', on);
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
-  $('#legend-plan').hidden = mode === 'lst';
+  $('#legend-plan').hidden = mode !== 'plain';
   $('#legend-lst').hidden = mode !== 'lst';
+  $('#legend-area').hidden = mode !== 'area';
   document.body.classList.toggle('lst-on', mode === 'lst');
+
+  if (mode === 'area' && !S.area) {
+    try {
+      S.area = await getJSON('/api/area');
+      if (!S.area.meta.dong) throw new Error('동네 자료가 비어 있습니다');
+      renderAreaLegend();
+    } catch (e) {
+      toast('동네 모멘텀 자료를 불러오지 못했습니다');
+      return setMapMode('plain');
+    }
+  }
 
   if (mode === 'lst' && !S.thermal) {
     try {
@@ -135,11 +179,35 @@ async function setMapMode(mode) {
   if (layers.dong) {
     layers.dong.setStyle(dongStyle);
     layers.dong.eachLayer(l => {
-      l.options.interactive = mode === 'lst';
+      l.options.interactive = mode !== 'plain';
+      l.unbindTooltip();
       if (mode === 'lst') bindLstTip(l);
-      else l.unbindTooltip();
+      else if (mode === 'area') bindAreaTip(l);
     });
   }
+}
+
+/* 동네에 마우스를 올리면 무엇으로 그렇게 칠했는지 말한다. */
+function bindAreaTip(layer) {
+  const row = S.area && S.area.dong[layer.feature.properties.adm_cd];
+  if (!row) return;
+  const pct = (row.momentum * 100).toFixed(1);
+  layer.bindTooltip(
+    `<b>${esc(row.name)}</b><br>작년 같은 달 대비 ${pct > 0 ? '+' : ''}${pct}%` +
+    `<br><span class="tip-sub">낮 시간대 외국인 연 ${
+      Math.round(row.level).toLocaleString()}명·시` +
+    (row.quiet ? ' · <b>아직 조용함</b>' : '') + '</span>',
+    { sticky:true, className:'lst-tip' });
+}
+
+function renderAreaLegend() {
+  const m = S.area.meta;
+  $('#area-ramp').innerHTML =
+    [...AREA_RAMP[0]].reverse().concat(AREA_RAMP[1])
+      .map(c => `<i style="background:${c}"></i>`).join('');
+  $('#area-note').textContent =
+    `${m.dong}개 행정동 · 43개월 · ${m.source}`;
+  $('#area-quiet').textContent = `${m.quiet}개`;
 }
 
 function bindLstTip(layer) {
@@ -580,8 +648,15 @@ function renderPlan() {
 }
 
 function filtered() {
-  return S.catFilter ? S.candidates.filter(c => c.category === S.catFilter)
-                     : S.candidates;
+  let rows = S.catFilter
+    ? S.candidates.filter(c => c.category === S.catFilter) : S.candidates;
+  if (S.quiet && S.area) {
+    /* 뜨는데 아직 안 붐비는 동네만. 동네 자료가 없는 곳은 남긴다 —
+       모르는 것을 '붐빈다'로 처리하면 멀쩡한 곳이 사라진다. */
+    const q = new Set(S.area.quiet);
+    rows = rows.filter(c => !c.adm_cd || q.has(c.adm_cd));
+  }
+  return rows;
 }
 
 /* 트렌드 배지. 오르는 쪽만 보여 주면 '뜨는 곳만 있다'는 인상을 주는데,
@@ -592,6 +667,46 @@ function trendBadge(t) {
   const tip = `작년 같은 달 대비 ${pct > 0 ? '+' : ''}${pct}% ` +
               `(연 ${Number(t.level).toLocaleString()}회 조회)`;
   return `<span class="badge trend ${esc(t.kind)}" title="${esc(tip)}">${esc(t.label)}</span>`;
+}
+
+/* 지금 위치에서 가까운 '조용히 뜨는 동네' 몇 곳. 목록이 비었을 때
+   빈 화면 대신 방향을 준다. */
+function nearestQuiet() {
+  const here = S.where && S.where.label ? S.where.label : '이 근처';
+  const rows = Object.entries(S.area.dong)
+    .filter(([, r]) => r.quiet)
+    .map(([cd, r]) => ({ cd, ...r, d: dongDist(cd) }))
+    .sort((a, b) => a.d - b.d).slice(0, 4);
+  const items = rows.map(r =>
+    `<li><b>${esc(r.name)}</b> <em>${r.momentum > 0 ? '+' : ''}${
+      (r.momentum * 100).toFixed(0)}%</em>${
+      r.d < 1e8 ? `<span>${(r.d / 1000).toFixed(1)}km</span>` : ''}</li>`
+  ).join('');
+  return `<p><b>${esc(here)}</b> 주변에는 아직 조용한 동네가 없습니다.
+    도심은 이미 붐비는 쪽이라 그렇습니다.</p>
+    <p class="q-h">가까운 곳 · 방문은 느는데 아직 안 붐비는 동네</p>
+    <ul>${items}</ul>`;
+}
+
+function dongDist(cd) {
+  if (!S.dongGeo || !S.lat) return 1e9;
+  const f = S.dongGeo.features.find(x => x.properties.adm_cd === cd);
+  if (!f) return 1e9;
+  const c = centroidOf(f.geometry);
+  if (!c) return 1e9;
+  const R = 6371000, t = Math.PI / 180;
+  const dLat = (c[1] - S.lat) * t, dLon = (c[0] - S.lon) * t;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(S.lat * t) * Math.cos(c[1] * t) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function centroidOf(g) {
+  const rings = g.type === 'Polygon' ? [g.coordinates[0]]
+    : g.type === 'MultiPolygon' ? g.coordinates.map(x => x[0]) : [];
+  let x = 0, y = 0, n = 0;
+  rings.forEach(r => r.forEach(pt => { x += pt[0]; y += pt[1]; n += 1; }));
+  return n ? [x / n, y / n] : null;
 }
 
 function renderCandidates() {
@@ -606,12 +721,24 @@ function renderCandidates() {
   });
 
   const rows = filtered();
+  /* 빈 목록을 그냥 두면 고장으로 보인다. 이 필터는 도심에서 자주 비는데,
+     조용한 동네 28곳이 대체로 도심 밖에 있어서다 — 그게 이 서비스가
+     하려는 말이기도 하다. 어디로 가면 되는지 짚어 준다. */
+  const empty = $('#quiet-empty');
+  if (empty) {
+    const show = S.quiet && !rows.length && S.area;
+    empty.hidden = !show;
+    if (show) empty.innerHTML = nearestQuiet();
+  }
   $('#list-summary').textContent = S.where
     ? `${S.where.label} 반경 2.5km · 지금 갈 수 있는 ${rows.length.toLocaleString()}곳`
     : `지금 갈 수 있는 ${rows.length.toLocaleString()}곳`;
   $('#cand-list').innerHTML = rows.slice(0, 120).map(c => `
     <li data-cid="${esc(c.cid)}" class="${S.selected === c.cid ? 'sel' : ''}">
-      <div class="t">${esc(c.title)}${trendBadge(c.trend)}</div>
+      <div class="t">${esc(c.title)}${trendBadge(c.trend)}${
+        S.area && c.adm_cd && S.area.dong[c.adm_cd]
+          && S.area.dong[c.adm_cd].quiet
+          ? '<span class="badge quiet">아직 조용함</span>' : ''}</div>
       <div class="m">
         <span>${esc(c.category)}</span>
         <span class="n">${c.distance_m < 1000 ? c.distance_m + 'm'
@@ -1253,6 +1380,15 @@ function bindUI() {
   });
 
   $$('#tabs button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+
+  $$('#quiet-seg button').forEach(b => b.onclick = async () => {
+    $$('#quiet-seg button').forEach(x => x.classList.toggle('on', x === b));
+    S.quiet = !!b.dataset.q;
+    if (S.quiet && !S.area) {
+      try { S.area = await getJSON('/api/area'); } catch (e) { /* 무시 */ }
+    }
+    renderCandidates(); drawMap();
+  });
 
   $$('#styles button').forEach(b => b.onclick = e => {
     const on = e.currentTarget.classList.toggle('on');
