@@ -543,3 +543,199 @@ class TestBadge:
         from weatherfit.momentum import badge
 
         assert badge("내림", "시험")["yoy"] != -0.44
+
+
+def counts(base, now, period=12):
+    """직전 1년은 매달 base, 최근 1년은 매달 now인 가게."""
+    return [float(base)] * period + [float(now)] * period
+
+
+class TestCountScale:
+    """리뷰는 이어지는 양이 아니라 하나씩 도착하는 셈이다.
+
+    월 1건짜리 가게와 월 500건짜리 가게는 흔들림의 크기가 애초에 다르다.
+    같은 자로 재면 반드시 한쪽이 이긴다 — 그리고 비율로 재면 작은 쪽이,
+    보통의 z점수로 재도 작은 쪽이 이긴다. 분모가 무너지기 때문이다.
+    """
+
+    def test_상승률로_재면_작은_가게가_이긴다(self):
+        """이게 고치려는 문제다. 리뷰 1→3은 +200%다."""
+        from weatherfit.momentum import COUNT
+
+        small = axes(counts(1, 3), scale=COUNT)
+        big = axes(counts(200, 260), scale=COUNT)
+        assert small["yoy"] > big["yoy"]          # +200% vs +30%
+
+    def test_변동량으로_재면_순서가_뒤집힌다(self):
+        """손님 둘이 더 쓴 것과 예순 명이 더 쓴 것은 같은 사건이 아니다."""
+        from weatherfit.momentum import COUNT
+
+        small = axes(counts(1, 3), scale=COUNT)
+        big = axes(counts(200, 260), scale=COUNT)
+        assert big["chg"] > small["chg"]
+
+    def test_앤스콤은_크기와_무관하게_눈금이_같다(self):
+        """분산 안정화의 정의다. 같은 배수면 큰 쪽이 더 확실한 신호다."""
+        from weatherfit.momentum import COUNT
+
+        a = axes(counts(5, 10), scale=COUNT)["chg"]
+        b = axes(counts(500, 1000), scale=COUNT)["chg"]
+        assert b > a * 5
+
+    def test_이어지는_양은_예전_방식_그대로(self):
+        """조회수까지 셈으로 재면 안 된다. 소스가 성질을 밝힌다."""
+        a = axes(counts(1, 3))
+        assert "chg" not in a and a["scale"] == "continuous"
+
+
+class TestRobustSd:
+    def test_뜬_가게가_자를_부풀리지_못한다(self):
+        """우리가 찾는 것이 바로 그 꼬리다. 보통 표준편차를 쓰면 찾는
+        대상이 스스로 자를 늘려 자기를 지운다."""
+        from weatherfit.momentum import robust_sd
+        import statistics as st
+
+        quiet = [0.0, 0.1, -0.1, 0.05, -0.05, 0.0, 0.1, -0.1, 0.0, 0.05]
+        withstar = quiet + [12.0]
+        assert robust_sd(withstar) < st.pstdev(withstar) / 3
+
+    def test_표본이_적으면_재지_않는다(self):
+        from weatherfit.momentum import robust_sd
+
+        assert robust_sd([1.0, 2.0]) == 0.0
+
+
+class TestCountEndToEnd:
+    def test_작은_가게도_유의하면_살아남는다(self, tmp_path, monkeypatch):
+        """논지의 핵심이다. 작다고 지우면 숨은 맛집을 못 찾고,
+        작다고 다 올리면 잡음이 신호를 이긴다. 유의성으로 가른다."""
+        from weatherfit import momentum as m
+
+        before = dict(m.SOURCES)
+        monkeypatch.setattr(m, "TREND_DIR", tmp_path)
+        try:
+            @m.source(name="_리뷰", kind="visits", unit="월 리뷰 수",
+                      entity="place", scale=m.COUNT, note="가게별 리뷰 개수")
+            def _f(verbose=True, **kw):
+                rows = {f"조용{i}": {"label": f"조용한집{i}",
+                                    "values": counts(30, 31)} for i in range(14)}
+                # 한 달만 튄 가게. 1건이 3건 된 것이 열두 달 이어지면 연
+                # 12건→36건이라 통계적으로 진짜 상승이다(p≈1e-8). 잡음인
+                # 것은 한 번 튀고 마는 쪽이다 — 12기간을 합치는 것 자체가
+                # 지속성 요구로 작동한다.
+                rows["잡음"] = {"label": "한달만튄집",
+                              "values": [1.0] * 23 + [3.0]}
+                rows["숨은"] = {"label": "숨은맛집", "values": counts(20, 40)}
+                rows["유명"] = {"label": "유명맛집", "values": counts(200, 260)}
+                return rows
+
+            m.build("_리뷰", verbose=False)
+            m.reset()
+            got = m.table("_리뷰")["series"]
+
+            assert got["숨은"]["trend"] == "rising"      # 작아도 유의하면 뜬다
+            assert got["유명"]["trend"] == "rising"
+            assert got["잡음"]["trend"] != "rising"      # 한 번 튄 건 상승이 아니다
+            assert got["조용0"]["trend"] == "steady"
+        finally:
+            m.SOURCES.clear()
+            m.SOURCES.update(before)
+            m.reset()
+
+    def test_셈에는_shrink를_걸지_않는다(self, tmp_path, monkeypatch):
+        """앤스콤이 이미 같은 일을 했다. 두 번 깎으면 찾으려던 작은
+        가게가 지워진다."""
+        from weatherfit import momentum as m
+
+        before = dict(m.SOURCES)
+        monkeypatch.setattr(m, "TREND_DIR", tmp_path)
+        try:
+            @m.source(name="_리뷰2", kind="visits", unit="월 리뷰 수",
+                      entity="place", scale=m.COUNT, note="x")
+            def _f(verbose=True, **kw):
+                r = {f"평범{i}": {"label": f"p{i}", "values": counts(30, 30)}
+                     for i in range(12)}
+                r["작음"] = {"label": "작은집", "values": counts(15, 34)}
+                return r
+
+            m.build("_리뷰2", verbose=False)
+            m.reset()
+            a = m.table("_리뷰2")["series"]["작음"]["axes"]
+            assert a["adj"] == a["rel"]        # 깎지 않았다
+        finally:
+            m.SOURCES.clear()
+            m.SOURCES.update(before)
+            m.reset()
+
+    def test_리뷰가_줄면_완화하지_않는다(self):
+        """하락 완화는 관심 자료의 성질이다. 너무 유명해져 검색을 안 하는
+        일은 있어도, 너무 유명해져 리뷰를 안 쓰는 일은 없다."""
+        from weatherfit.momentum import COUNT, _damped
+
+        assert _damped({"adj": -0.4, "scale": COUNT}) == pytest.approx(-0.4)
+        assert _damped({"adj": -0.4}) == pytest.approx(-0.2)
+
+
+class TestCountPathLeftovers:
+    """이어지는 양을 재려고 만든 장치가 셈에서 그대로 돌면 안 된다.
+
+    넷 다 실제로 깨져 있었고, 하나는 이 프로젝트의 논지를 정면으로 깼다.
+    """
+
+    def test_숨은_가게를_기준_흔들림으로_지우지_않는다(self):
+        """월 1→8건이면 비율이 +700%다. suspect는 위키백과 문서 제목이
+        바뀐 걸 잡으려고 만든 규칙인데, 셈에서는 작은 기준선 위의 큰
+        비율이 정상이고 하필 그게 우리가 찾는 것이다. 규칙이 대상을
+        먼저 지우고 있었다."""
+        from weatherfit.momentum import COUNT, suspect
+
+        a = axes(counts(1, 8), scale=COUNT)
+        assert a["yoy"] > 5.0            # 비율로는 문턱을 넘는다
+        assert not suspect(a)            # 그래도 자료 사고가 아니다
+        a["rel"] = a["adj"] = 3.0
+        assert classify(a) == "rising"
+
+    def test_이어지는_양에는_그대로_건다(self):
+        """조회수가 27배로 뛴 남산서울타워는 여전히 자료 사고다."""
+        from weatherfit.momentum import suspect
+
+        assert suspect({"yoy": 26.25})
+
+    def test_모멘텀이_z에서도_구분된다(self):
+        """z가 0.6이든 7.8이든 전부 1.000이면 순위가 무의미하다.
+        비율용 눈금(±0.5)을 z에 그대로 쓰면 즉시 포화한다."""
+        from weatherfit.momentum import COUNT
+
+        def m(z):
+            return score({"level": 480.0, "yoy": 1.0, "surge": 0.0,
+                          "scale": COUNT, "rel": z, "adj": z}, 12.0)["momentum"]
+
+        vals = [m(z) for z in (0.6, 1.5, 3.0)]
+        assert vals == sorted(vals) and len(set(vals)) == 3
+        assert m(-2.0) < 0.5 < m(0.6)
+
+    def test_비율과_z를_빼지_않는다(self):
+        """0.3과 6.9를 빼서 -6.6을 내고 '크게 어긋난다'고 말한 적이 있다."""
+        from weatherfit.momentum import COUNT, divergence
+
+        d = divergence({"yoy": 0.3, "rel": 0.3},
+                       {"yoy": 1.0, "rel": 6.9, "scale": COUNT})
+        assert d["gap"] is None and not d["notable"] and d["why"]
+
+    def test_같은_성질끼리는_비교한다(self):
+        from weatherfit.momentum import COUNT, divergence
+
+        d = divergence({"rel": 6.9, "scale": COUNT},
+                       {"rel": 1.0, "scale": COUNT})
+        assert d["gap"] == pytest.approx(5.9) and d["notable"]
+
+    def test_리뷰가_뜸한_가게도_급등을_잰다(self):
+        """비율의 시계열로 재면 앞 기간이 0인 달이 통째로 빠진다.
+        리뷰가 뜸한 가게일수록 0이 많고, 하필 그런 가게를 보려고
+        만든 지표다. 앤스콤 차이는 0이 있어도 성립한다."""
+        from weatherfit.momentum import COUNT
+
+        v = [0.0, 1.0, 0.0, 2.0, 1.0, 0.0, 1.0, 2.0, 0.0, 1.0, 1.0, 0.0] + \
+            [1.0, 2.0, 1.0, 3.0, 2.0, 1.0, 2.0, 3.0, 1.0, 2.0, 2.0, 1.0]
+        a = axes(v, scale=COUNT)
+        assert a is not None and a["surge"] == a["surge"]   # NaN이 아니다

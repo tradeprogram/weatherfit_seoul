@@ -56,13 +56,45 @@ TREND_DIR = ROOT / "data" / "trend"
 PERIOD = 12            # 월 자료의 계절 주기. 분기 자료면 4다.
 MAX_RATIO = 6.0        # 한 해에 이보다 크게 뛰면 자료가 바뀐 것이다 (아래 참조)
 
+# 자료의 성질. 뜻은 몰라도 되지만 **어떤 종류의 수인지**는 알아야 한다.
+# 조회수·소비액처럼 이어지는 양과, 리뷰 개수처럼 하나씩 도착하는 셈은
+# 잡음의 크기가 근본적으로 다르다. 같은 자로 재면 한쪽이 반드시 진다.
+CONTINUOUS = "continuous"
+COUNT = "count"
+
 
 # ----------------------------------------------------------------- 엔진
 #
 # 여기 아래로는 숫자가 무엇을 뜻하는지 모른다. 그게 요점이다.
 
+def anscombe(x: float) -> float:
+    """분산 안정화 변환. 셈의 눈금을 크기와 무관하게 만든다.
+
+    리뷰는 이어지는 양이 아니라 하나씩 도착하는 **셈**이다. 셈이 도착하는
+    과정은 포아송이고, 포아송은 분산이 평균과 같다 — 월 1건짜리 가게의
+    흔들림과 월 500건짜리 가게의 흔들림은 애초에 크기가 다르다.
+
+    그래서 비율로도, 보통의 z점수로도 비교가 안 된다.
+
+        1→3건    상승률 +200%   일반 z 4.0   ← 손님 둘이 더 썼을 뿐이다
+       50→65건   상승률  +30%   일반 z 2.0
+
+    일반 z가 오히려 더 나쁘다. 월 1건이던 가게는 이력의 표준편차가 거의
+    0이라 분모가 무너진다. 상승률의 분모 문제를 표준편차의 분모 문제로
+    옮겼을 뿐이다.
+
+    앤스콤 변환을 지나면 λ가 1이든 500이든 분산이 1로 같아진다. 그래서
+    골목 가게와 유명 맛집을 같은 자에 올려놓을 수 있다.
+
+        A(x) = 2√(x + 3/8)
+
+    변환한 두 값의 차가 곧 '변동량'이고, 변화가 없을 때 대략 N(0,1)이다.
+    """
+    return 2.0 * math.sqrt(max(x, 0.0) + 0.375)
+
+
 def axes(values: list[float], min_total: float = 0.0,
-         period: int = PERIOD) -> dict | None:
+         period: int = PERIOD, scale: str = CONTINUOUS) -> dict | None:
     """세 축. 자료가 모자라면 None — 0으로 채우면 '안 뜬다'는 거짓말이 된다.
 
     비교 간격은 **반드시 계절 주기와 같아야 한다.** 처음엔 있는 자료를
@@ -84,20 +116,33 @@ def axes(values: list[float], min_total: float = 0.0,
 
     # 전년 동기비 — 같은 때끼리 나누므로 계절 성분이 약분된다
     yoy = (sum(last) - base) / base
-    ratio = [last[i] / prev[i] for i in range(period) if prev[i] > 0]
-    if len(ratio) < 3:
-        return None
-    sd = st.pstdev(ratio)
-    surge = (st.mean(ratio[-3:]) - st.mean(ratio)) / sd if sd > 1e-9 else 0.0
 
-    return {"level": round(sum(last), 3), "yoy": round(yoy, 4),
-            "surge": round(surge, 3), "periods": n}
+    # 급등은 '제 이력보다 최근이 튀었나'다. 이어지는 양은 비율의 시계열로
+    # 재는데, 셈에서 그러면 앞 기간이 0인 달이 통째로 빠진다. 리뷰가 뜸한
+    # 가게일수록 0이 많아 표본이 사라지고, 하필 그런 가게를 보려고 만든
+    # 지표다. 셈에서는 앤스콤 차이의 시계열로 잰다 — 0이 있어도 성립한다.
+    if scale == COUNT:
+        moves = [anscombe(last[i]) - anscombe(prev[i]) for i in range(period)]
+    else:
+        moves = [last[i] / prev[i] for i in range(period) if prev[i] > 0]
+    if len(moves) < 3:
+        return None
+    sd = st.pstdev(moves)
+    surge = (st.mean(moves[-3:]) - st.mean(moves)) / sd if sd > 1e-9 else 0.0
+
+    got = {"level": round(sum(last), 3), "yoy": round(yoy, 4),
+           "surge": round(surge, 3), "periods": n, "scale": scale}
+    if scale == COUNT:
+        # 셈이면 비율 대신 분산 안정화 차이를 쓴다. 이게 이 자료의
+        # '변동량'이고, 크기가 다른 가게끼리 직접 비교할 수 있는 유일한 값이다.
+        got["chg"] = round(anscombe(sum(last)) - anscombe(base), 4)
+    return got
 
 
 MARKET_MIN = 8         # 이보다 적으면 '시장'이 무엇인지 알 수 없다
 
 
-def market_adjust(all_axes: list[dict]) -> float:
+def market_adjust(all_axes: list[dict], key: str = "yoy") -> float:
     """소스 전체가 함께 움직인 몫을 구한다. 중앙값을 시장 수익률로 본다.
 
     이걸 빼지 않으면 플랫폼의 사정을 장소의 사정으로 읽는다. 한국어
@@ -116,7 +161,7 @@ def market_adjust(all_axes: list[dict]) -> float:
     평균이 아니라 중앙값을 쓰는 이유는 청와대(+419%) 하나가 시장 전체를
     끌어올리기 때문이다. 112곳 기준으로 평균은 +12.0%, 중앙값은 +3.3%다.
     """
-    ys = sorted(a["yoy"] for a in all_axes if a and not suspect(a))
+    ys = sorted(a.get(key, 0.0) for a in all_axes if a and not suspect(a))
     # 개체가 몇 개 없으면 시장을 뺄 수 없다. 하나뿐이면 중앙값이 곧
     # 그 자신이라 조정값이 0이 되고, 무엇이 오르든 '꾸준함'이 된다.
     # 모르는 것을 0으로 채우면 안 된다 — 조정 자체를 하지 않는다.
@@ -124,6 +169,25 @@ def market_adjust(all_axes: list[dict]) -> float:
         return 0.0
     mid = len(ys) // 2
     return ys[mid] if len(ys) % 2 else (ys[mid - 1] + ys[mid]) / 2
+
+
+def robust_sd(xs: list[float]) -> float:
+    """중앙값 절대편차로 잰 흩어짐. 실제로 뜬 가게가 자를 늘리지 못하게 한다.
+
+    셈 자료를 앤스콤으로 옮기면 이론상 분산이 1이 된다. 그런데 리뷰는
+    포아송보다 더 흩어진다 — 블로거 한 명이 뜨면 한꺼번에 몰리고 단체
+    손님이 오면 하루에 다섯 개가 붙는다(과분산).
+
+    그 정도를 상수로 정하지 않고 **모아 둔 가게들에서 직접 잰다.** 표준편차
+    대신 중앙값 절대편차를 쓰는 이유는, 우리가 찾으려는 '진짜 뜬 곳'이
+    바로 그 꼬리에 있어서 평범한 표준편차를 쓰면 찾는 대상이 자를 부풀려
+    스스로를 지워 버리기 때문이다.
+    """
+    if len(xs) < 3:
+        return 0.0
+    m = sorted(xs)[len(xs) // 2]
+    mad = sorted(abs(x - m) for x in xs)[len(xs) // 2]
+    return mad * 1.4826          # 정규분포에서 표준편차와 눈금을 맞추는 계수
 
 
 def suspect(a: dict | None) -> bool:
@@ -140,14 +204,23 @@ def suspect(a: dict | None) -> bool:
     이건 위키백과만의 문제가 아니다. 어떤 소스든 집계 방식이 바뀌거나
     항목이 새로 생기면 분모가 무너지고 비율이 폭발한다. 그래서 소스가
     아니라 엔진이 잡는다 — 데이터가 바뀌어도 남아 있어야 하는 방어다.
+
+    **다만 셈에는 걸지 않는다.** 리뷰가 월 1건에서 8건이 되면 비율은 +700%지만
+    그건 자료가 바뀐 게 아니라 손님이 는 것이다. 작은 기준선 위의 큰 비율은
+    셈에서 정상이고, 하필 그게 우리가 찾으려는 숨은 가게다. 여기에 이 규칙을
+    걸면 찾으려는 대상을 규칙이 먼저 지운다. 셈 쪽에서 분모가 무너지는 경우는
+    앞선 기간이 거의 0인 때인데, 그건 min_total 문턱이 이미 걸러 낸다.
     """
-    return bool(a) and a["yoy"] > MAX_RATIO - 1.0
+    return (bool(a) and a.get("scale") != COUNT
+            and a["yoy"] > MAX_RATIO - 1.0)
 
 
 def excess(a: dict | None) -> float:
-    """시장을 뺀 그 개체만의 전년비. 없으면 원값을 쓴다.
+    """그 개체만의 움직임. 없으면 원값을 쓴다.
 
-    **무엇이 일어났는지**를 말하는 값이다. 판정(classify)과 화면 표시에 쓴다.
+    이어지는 양이면 시장을 뺀 **전년비**이고, 셈이면 과분산까지 보정한
+    **z점수**다. 어느 쪽이든 "남들과 견줘 이 곳이 얼마나 움직였나"라는
+    같은 질문의 답이라, 화면과 판정은 이 값 하나만 보면 된다.
     """
     if not a:
         return 0.0
@@ -206,16 +279,35 @@ def classify(a: dict | None) -> str:
     if suspect(a):
         return "suspect"         # 자료가 바뀐 자국이다 — 트렌드가 아니다
     y = excess(a)                # 시장이 함께 움직인 몫은 빼고 본다
+    # 문턱은 자료의 성질을 따른다. 이어지는 양이면 y가 비율이라 ±15%가
+    # 뜻이 있고, 셈이면 y가 z점수라 ±1.5가 뜻이 있다. 같은 수를 쓰면
+    # 한쪽은 전부 걸리고 한쪽은 하나도 안 걸린다.
+    up = Z_MOVE if a.get("scale") == COUNT else 0.15
     if a["surge"] >= 1.2:
         return "spike"           # 최근 몇 기간에 몰렸다 = 뉴스일 가능성
-    if y >= 0.15:
+    if y >= up:
         # 전년비만 보면 청와대가 +419%로 1위다. 그런데 급등이 -1.15 —
         # 오른 건 작년 일이고 최근 석 달은 제 평균보다 낮다. 이미 지나간
         # 상승을 '뜨는 중'이라 적으면 오늘 갈 곳을 잘못 고르게 된다.
         return "rising" if a["surge"] >= -0.5 else "peaked"
-    if y <= -0.15:
+    if y <= -up:
         return "fading"
     return "steady"
+
+
+Z_SPAN = 8.0           # 셈의 z를 0~1로 옮길 때의 폭. ±4에서 양 끝에 닿는다.
+
+
+def _span(a: dict) -> float:
+    """0~1로 옮길 때 무엇을 양 끝으로 볼 것인가.
+
+    이어지는 양은 전년비라 ±50%를 끝으로 본다. 두 배로 뛰는 곳은 드물고,
+    드문 것에 눈금을 맞추면 나머지가 전부 가운데로 뭉친다.
+
+    셈은 z점수라 눈금이 완전히 다르다. 같은 ±0.5를 쓰면 z가 0.6이든
+    7.8이든 전부 1.000이 되어 순위에서 구분이 사라진다 — 실제로 그랬다.
+    """
+    return Z_SPAN if a.get("scale") == COUNT else 1.0
 
 
 def _damped(a: dict) -> float:
@@ -225,7 +317,12 @@ def _damped(a: dict) -> float:
     adj가 있어도 excess를 부르고, 그 안에서 없는 키를 찾다 터진다.
     """
     v = a["adj"] if "adj" in a else excess(a)
-    return v if v >= 0 else v * DOWN_DAMP
+    if v >= 0 or a.get("scale") == COUNT:
+        # 하락 완화는 '관심' 자료에만 해당한다. 너무 유명해져서 더 찾아볼
+        # 필요가 없어지는 일은 조회수에 일어나지, 리뷰 개수에는 안 일어난다.
+        # 리뷰가 줄었다면 그냥 손님이 준 것이다.
+        return v
+    return v * DOWN_DAMP
 
 
 def score(a: dict, max_log: float) -> dict:
@@ -251,12 +348,16 @@ def score(a: dict, max_log: float) -> dict:
         # 그래서 하락 쪽만 절반으로 줄인다. 올릴 때는 아는 만큼 올리고,
         # 내릴 때는 모르는 만큼 덜 내린다. 판정 라벨('식는 중')은 그대로
         # 두므로 화면에는 사실대로 나오고, 순위만 덜 움직인다.
-        "momentum": round(max(0.0, min(1.0, (_damped(a) + 0.5) / 1.0)), 3),
+        "momentum": round(max(0.0, min(1.0, _damped(a) / _span(a) + 0.5)), 3),
         "surge": round(max(0.0, min(1.0, (a["surge"] + 2.0) / 4.0)), 3),
     }
 
 
 DIVERGE_MIN = 0.30     # 전년비가 이만큼 어긋나면 볼 만하다
+Z_MOVE = 1.5           # 셈 자료의 판정 문턱. 대략 상·하위 7%씩이다.
+# 앤스콤을 지난 값은 분산이 1이므로, 두 값의 **차이**는 분산이 2다.
+# 가게들이 다 똑같이 움직여 흩어짐을 잴 수 없을 때 쓰는 영가설 눈금.
+NULL_SD = math.sqrt(2.0)
 DOWN_DAMP = 0.5        # 내려가는 신호는 절반만 믿는다. 아래 설명 참조.
 
 
@@ -272,8 +373,16 @@ def divergence(a: dict, b: dict) -> dict:
     북촌한옥마을이 두 번째다. 조회수는 40.8% 줄었는데 실측 방문은 늘었다.
     조회수만 보면 '식는 중'이라 추천에서 빼게 되는데, 사실은 그 반대다.
     """
+    # 비율과 z점수를 빼면 뜻이 없는 수가 나온다. 실제로 0.3과 6.9를 빼서
+    # -6.6이라는 답을 내고 '크게 어긋난다'고 말한 적이 있다. 단위가 다르면
+    # 모른다고 하는 편이 낫다.
+    if a.get("scale") != b.get("scale"):
+        return {"gap": None, "notable": False, "lead": None,
+                "why": "자료의 성질이 달라 같은 자로 비교할 수 없습니다"}
     gap = excess(a) - excess(b)
-    return {"gap": round(gap, 4), "notable": abs(gap) >= DIVERGE_MIN,
+    span = _span(a)
+    return {"gap": round(gap, 4),
+            "notable": abs(gap) >= DIVERGE_MIN * span,
             "lead": "a" if gap > 0 else "b"}
 
 
@@ -289,6 +398,7 @@ class Source:
     entity: str                # place | category
     min_total: float = 0.0
     period: int = PERIOD       # 계절 주기. 월 자료는 12, 분기 자료는 4.
+    scale: str = CONTINUOUS    # 이어지는 양인가(조회수), 셈인가(리뷰 개수)
     note: str = ""
     fetch: object = None
 
@@ -530,6 +640,42 @@ def _fetch_datalab(verbose: bool = True, **_) -> dict:
 
 # ----------------------------------------------------------------- 수집
 
+def _center_and_scale(have: list[dict]) -> float:
+    """개체들을 나란히 놓고 각자의 몫만 남긴다.
+
+    이어지는 양과 셈이 여기서 갈린다.
+
+      이어지는 양   전년비에서 **중앙값을 뺀다**. 플랫폼이 함께 움직인
+                   몫을 장소의 사정으로 읽지 않기 위해서다.
+      셈           앤스콤 변동량에서 중앙값을 빼고 **흩어짐으로 나눈다.**
+                   빼기는 같은 이유고, 나누기는 과분산 보정이다 — 리뷰는
+                   포아송보다 흩어지므로 그 정도를 가게들에서 직접 재서
+                   눈금으로 삼는다.
+
+    셈 쪽에는 shrink를 걸지 않는다. 작은 기준선 위의 큰 비율을 깎으려고
+    만든 장치인데, 앤스콤 변환이 이미 그 일을 하고 있어서 두 번 깎으면
+    정작 찾으려던 작은 가게가 지워진다.
+    """
+    counts = [a for a in have if a.get("scale") == COUNT]
+    conts = [a for a in have if a.get("scale") != COUNT]
+
+    market = market_adjust(conts, "yoy")
+    if len(conts) >= MARKET_MIN:
+        for a in conts:
+            a["rel"] = round(a["yoy"] - market, 4)
+
+    if len(counts) >= MARKET_MIN:
+        chgs = [a["chg"] for a in counts if not suspect(a)]
+        mid = sorted(chgs)[len(chgs) // 2] if chgs else 0.0
+        # 흩어짐을 못 재면 포아송 영가설의 눈금으로 떨어진다. 1.0 같은
+        # 임의값을 쓰면 문턱의 뜻이 사라진다 — 이건 유도된 값이다.
+        sd = robust_sd(chgs) or NULL_SD
+        for a in counts:
+            a["rel"] = round((a["chg"] - mid) / sd, 4)
+            a["adj"] = a["rel"]          # 셈은 shrink를 걸지 않는다
+    return market
+
+
 def _finish(rows: dict) -> float:
     """축이 나온 뒤의 뒷일 — 시장 조정, 판정, 정규화.
 
@@ -538,20 +684,20 @@ def _finish(rows: dict) -> float:
     확인할 수 없게 된다.
     """
     have = [r["axes"] for r in rows.values() if r.get("axes")]
-    # 시장 효과를 먼저 뗀다. 이걸 빼야 소스를 가로질러 비교할 수 있다.
-    market = market_adjust(have)
     for a in have:
         a.pop("rel", None)
         a.pop("adj", None)
-        if len(have) >= MARKET_MIN:
-            a["rel"] = round(a["yoy"] - market, 4)
+    # 남들과 견줘 이 곳만의 몫을 남긴다. 자료 성질에 따라 방식이 갈린다.
+    market = _center_and_scale(have)
     for r in rows.values():
         r["trend"] = classify(r.get("axes"))       # 조정값으로 다시 판정한다
 
     # 기준선이 작은 곳의 비율을 그만큼 깎는다. 순위에만 쓰는 값이다.
-    lv = sorted(a["level"] for a in have if a["level"] > 0)
+    # 셈 자료는 앤스콤이 이미 같은 일을 했으므로 건너뛴다.
+    cont = [a for a in have if a.get("scale") != COUNT]
+    lv = sorted(a["level"] for a in cont if a["level"] > 0)
     typical = lv[len(lv) // 2] if lv else 0.0
-    for a in have:
+    for a in cont:
         a["adj"] = round(shrink(excess(a), a["level"], typical), 4)
 
     # 정규화는 소스 **안에서만** 한다. 단위가 다른 값을 한 자로 재면 안 된다.
@@ -605,7 +751,7 @@ def build(name: str, verbose: bool = True, **kw) -> Path:
         vals = r.get("values") or []
         if vals:
             lengths.append(len(vals))
-        a = axes(vals, src.min_total, src.period)
+        a = axes(vals, src.min_total, src.period, src.scale)
         r.pop("values", None)          # 원계열은 무겁다. 축만 남긴다
         r["axes"] = a
         r["trend"] = classify(a)
