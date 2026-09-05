@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-title" content="웨더핏 서울">
 <meta name="description" content="관심과 방문을 갈라 재어, 뜨고 있지만 아직 붐비지 않는 서울을 찾아 드립니다">
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=104">
+<link rel="stylesheet" href="style.css?v=108">
 </head>
 <body>
 
@@ -234,13 +234,11 @@
   </form>
 </section>
 
-<div class="offline-bar" id="offline-bar" role="status" hidden>
-  연결이 끊겼습니다. 새 일정은 짤 수 없지만 <b>보관함</b>에 저장해 둔 일정은
-  그대로 보실 수 있습니다.
-</div>
+<div class="offline-bar" id="offline-bar" role="status" hidden
+     data-en="You are offline. New plans cannot be built, but the plans you put in Saved are still here.">연결이 끊겼습니다. 새 일정은 짤 수 없지만 보관함에 저장해 둔 일정은 그대로 보실 수 있습니다.</div>
 
 <div class="legend glass" id="legend-plan">
-  <div class="legend-head">일정</div>
+  <div class="legend-head" data-en="Plan">일정</div>
   <div class="legend-row"><span class="dot anchor"></span>오늘의 앵커</div>
   <div class="legend-row"><span class="dot food"></span>식사·카페</div>
   <div class="legend-row"><span class="dot spot"></span>둘러볼 곳</div>
@@ -269,7 +267,7 @@
   <div class="geo-card glass">
     <span class="geo-mark">📍</span>
     <h2>지금 계신 곳에서 시작합니다</h2>
-    <p>위치를 알려주시면 <b>걸어갈 수 있는 거리</b>에서 지금 열려 있는 곳만
+    <p data-en-html="Tell us where you are and we will pick only places open right now within &lt;b&gt;walking distance&lt;/b&gt; and build a half-day plan. Your location stays in the browser and is never stored.">위치를 알려주시면 <b>걸어갈 수 있는 거리</b>에서 지금 열려 있는 곳만
       골라 반나절 일정을 짜 드립니다. 위치는 브라우저 안에서만 쓰이고
       어디에도 저장되지 않습니다.</p>
     <div class="geo-actions">
@@ -288,12 +286,12 @@
     </div>
 
     <h3>이 서비스가 하는 일</h3>
-    <p>비짓서울 API의 관광 콘텐츠에 <b>‘지금 갈 수 있는가’를 판정하는 계층</b>을
+    <p data-en-html="On top of the Visit Seoul API content we added &lt;b&gt;a layer that checks whether you can actually go now&lt;/b&gt;. Events that have ended, places closed today, and outdoor spots the current weather rules out are removed first; the plan is built only from what is left.">비짓서울 API의 관광 콘텐츠에 <b>‘지금 갈 수 있는가’를 판정하는 계층</b>을
       얹었습니다. 이미 끝난 행사, 오늘 휴무인 곳, 지금 날씨에 무리인 야외 장소를
       걸러낸 뒤 남은 것으로만 일정을 만듭니다.</p>
 
     <h3>도착 시각에 열려 있는가를 봅니다</h3>
-    <p>‘지금 열려 있다’는 40분 뒤에 도착할 장소에는 해당하지 않는 이야기입니다.
+    <p data-en-html="&lsquo;Open now&rsquo; says nothing about a place you will reach in 40 minutes. We check again at the time you actually arrive, and tell you when closing is near.">‘지금 열려 있다’는 40분 뒤에 도착할 장소에는 해당하지 않는 이야기입니다.
       이동 시간을 더한 시각으로 다시 판정하고, 마감이 가까우면 알려 드립니다.</p>
 
     <h3>판정 단계</h3>
@@ -305,23 +303,23 @@
     </table>
 
     <h3>‘판정 불가’를 따로 두는 이유</h3>
-    <p>이용시간이 자유 문장이라 기계가 읽을 수 없는 경우가 많습니다. 모르는 것을
+    <p data-en-html="Opening hours are free text, so a machine often cannot read them. Treating the unknown as open sends you on a wasted trip; treating it as closed deletes perfectly good places. So we &lt;b&gt;keep excluded and unverifiable apart&lt;/b&gt;, and show the ratio in the Evidence tab.">이용시간이 자유 문장이라 기계가 읽을 수 없는 경우가 많습니다. 모르는 것을
       ‘열려 있다’로 처리하면 헛걸음이 생기고 ‘닫혔다’로 처리하면 멀쩡한 후보가
       사라집니다. 그래서 <b>탈락과 판정 불가를 구분</b>하고, 근거 탭에서 비율을
       그대로 보여줍니다.</p>
 
     <h3>소요시간</h3>
-    <p>도보는 TMAP 보행자 경로, 대중교통은 ODsay, 자동차는 네이버 Directions를
+    <p data-en-html="Walking uses the TMAP pedestrian route, transit uses ODsay, driving uses Naver Directions. Without a key it falls back to a straight-line estimate, and every leg is marked &lt;b&gt;measured or estimated&lt;/b&gt;.">도보는 TMAP 보행자 경로, 대중교통은 ODsay, 자동차는 네이버 Directions를
       씁니다. 키가 없으면 직선거리 추정으로 떨어지며 각 구간에 <b>실측인지 추정인지</b>
       표시됩니다.</p>
 
     <h3>데이터</h3>
-    <p>관광 콘텐츠 비짓서울 API · 행정동 경계 통계청 · 기상 기상청 초단기실황 ·
+    <p data-en-html="Tourism content Visit Seoul API · Neighbourhood boundaries KOSTAT · Weather KMA nowcast · Map OpenStreetMap">관광 콘텐츠 비짓서울 API · 행정동 경계 통계청 · 기상 기상청 초단기실황 ·
       지도 OpenStreetMap</p>
   </div>
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="app.js?v=104"></script>
+<script src="app.js?v=108"></script>
 </body>
 </html>

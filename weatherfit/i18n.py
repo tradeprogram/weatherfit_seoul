@@ -124,6 +124,48 @@ PHRASES: dict[str, str] = {
     "지역": "Area",
     "행정동": "Neighborhood",
 
+    # ── 이용 안내 (조각으로 이으면 'arrive time is what we check'가 된다)
+    "도착 시각에 열려 있는가를 봅니다": "We check whether it is open when you arrive",
+    "도착 시각에 문을 열어 두는가": "Is it open when you arrive",
+    "지금 날씨에 실외를 권할 수 있는가": "Can we suggest outdoors in this weather",
+
+    # ── 위치 안내
+    # '내 위치로'를 넣었더니 '내 위치로 시작'이 'Back to my location 시작'이
+    # 됐다. 긴 쪽을 같이 두지 않으면 짧은 키가 문장을 반만 먹는다.
+    "내 위치로 시작": "Start from my location",
+    "위치를 확인하고 있습니다…": "Checking your location…",
+    "지난번 위치가 기억되어 있습니다.": "Your last location was remembered.",
+    "이 브라우저는 위치를 지원하지 않습니다. 서울시청에서 시작합니다.":
+        "This browser does not support location. Starting from City Hall.",
+    "위치 권한이 거부되었습니다. 브라우저 주소창의 자물쇠에서 허용할 수 있습니다.":
+        "Location permission was denied. You can allow it from the lock icon "
+        "in the address bar.",
+    "위치를 확인할 수 없습니다. 실내에서는 신호가 약할 수 있습니다.":
+        "Your location could not be determined. Indoors the signal can be weak.",
+    "위치 확인이 오래 걸립니다.": "Locating is taking a while.",
+    "위치를 가져오지 못했습니다.": "Could not get your location.",
+    " 서울시청 기준으로 보여 드립니다.": " Showing results from City Hall instead.",
+
+    # ── 상세 패널
+    "무장애 시설": "Accessible facilities",
+    "태그": "Tags",
+    "운영시간 정규화": "Opening-hours normalisation",
+    "확정 — 요일·시각 모두 명시": "Determined — both days and times stated",
+    "가정 포함 — 예외 단서 또는 요일 누락":
+        "Includes assumptions — exception clause or missing days",
+    "판정 불가 — 시각 패턴 없음": "Cannot determine — no time pattern",
+    "네이버 지도에서 보기 ↗": "Open in Naver Map ↗",
+    # 무장애 항목은 다섯 종뿐인 닫힌 집합이라 원문이어도 옮길 수 있다.
+    "접근가능": "Step-free access",
+    "장애인화장실": "Accessible restroom",
+    "전용주차": "Accessible parking",
+    "엘리베이터": "Elevator",
+
+    # ── 범례
+    "일정": "Plan",
+    "아직 조용한 곳": "Still quiet",
+    "구간 경계": "Band edges",
+
     # ── 근거 항목
     "가까움": "Nearby",
     "정보 충실": "Well documented",
