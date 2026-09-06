@@ -37,3 +37,6 @@ services:
         sync: false
       - key: TMAP_APP_KEY
         sync: false
+      # 실시간 혼잡. 없으면 혼잡 계층만 조용히 빠지고 나머지는 그대로 돈다.
+      - key: SEOUL_RTD_KEY
+        sync: false

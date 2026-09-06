@@ -75,12 +75,20 @@ def _save(fig, name: str) -> None:
 
 # ------------------------------------------------------------------ 자료
 
+# 판정 깔때기는 '언제'에 따라 달라진다. 새벽에 뽑으면 거의 다 닫혀 있고
+# 한낮이면 대부분 열려 있다 — 둘 다 맞는 값이라, 시각을 못 박고 그림에
+# 함께 적는 수밖에 없다. 관광객이 실제로 나서는 토요일 오후 2시로 잡는다.
+# 평일 같은 시각이 오히려 통과율이 조금 높아 유리한 쪽을 고른 것도 아니다.
+REF_AT = "2026-09-12T14:00"
+REF_TXT = "2026년 9월 12일(토) 14시 기준"
+
+
 def _stats() -> dict:
-    """라이브 API의 근거 통계. 없으면 저장해 둔 사본."""
+    """라이브 API의 근거 통계."""
     import requests
     try:
         r = requests.get("https://weatherfit-seoul-api.onrender.com/api/stats",
-                         timeout=120)
+                         params={"at": REF_AT, "mode": "clear"}, timeout=120)
         r.raise_for_status()
         return r.json()
     except Exception as e:
@@ -172,6 +180,9 @@ def figure1(s: dict) -> None:
                 fontsize=11, color=RUST,
                 arrowprops=dict(arrowstyle="->", color=RUST, lw=1.2))
     _panel(ax, "b", "'지금 갈 수 있는' 것만 남기면")
+    # 시각을 안 적으면 이 수는 검증할 수 없는 수가 된다
+    ax.text(0.98, -0.185, REF_TXT, transform=ax.transAxes, ha="right",
+            fontsize=10, color=MID)
 
     # (c) 운영정보 결손
     ax = axes[2]
@@ -305,7 +316,10 @@ def figure2() -> None:
     return r, r2, min(ms), max(ms), len(ff), len(pr)
 
 
-def _quadrant() -> tuple[list, str]:
+SNAP = ROOT / "data" / "crowd_snapshot.json"
+
+
+def _quadrant(refresh: bool = False) -> tuple[list, str]:
     """실시간 관측 121곳에 그 동네의 방문 모멘텀을 붙인다.
 
     혼잡은 지금 값이고 모멘텀은 43개월 누적이다. 둘의 시간 축이 다르지만
@@ -320,6 +334,10 @@ def _quadrant() -> tuple[list, str]:
     from .momentum import excess, table
     from .routing import haversine_m
     from .server import _dong_features
+
+    if SNAP.exists() and not refresh:
+        d = json.loads(SNAP.read_text(encoding="utf-8"))
+        return [tuple(r) for r in d["rows"]], d["at"]
 
     rows = requests.get(LIST_URL, params={"hotspotNm": ""},
                         headers=UA, timeout=60).json().get("row") or []
@@ -343,7 +361,14 @@ def _quadrant() -> tuple[list, str]:
         if key in mom:
             out.append((x["area_nm"], CROWD_NUM.get(x["area_congest_lvl"], 0),
                         mom[key], key))
-    return out, time.strftime("%Y-%m-%d %H:%M")
+
+    at = time.strftime("%Y-%m-%d %H:%M")
+    SNAP.parent.mkdir(parents=True, exist_ok=True)
+    SNAP.write_text(json.dumps(
+        {"note": "제안서 그림 3의 근거. 혼잡은 실시간이라 이 순간의 값을 "
+                 "붙들어 둔다. 다시 받으려면 --refresh.",
+         "at": at, "rows": out}, ensure_ascii=False), encoding="utf-8")
+    return out, at
 
 
 CROWD_NUM = {"여유": 1, "보통": 2, "약간 붐빔": 3, "붐빔": 4}
@@ -352,16 +377,16 @@ RISE = 0.15          # 서비스가 '뜨는 중'이라 부르는 기준
 BUSY = 3             # 이 위가 '붐빈다'
 
 
-def figure3():
+def figure3(refresh: bool = False):
     """지금 혼잡 × 방문 모멘텀. 이 사분면이 곧 제품이다."""
     import random
 
-    got, when = _quadrant()
+    got, when = _quadrant(refresh)
     if not got:
         print("  그림 3 건너뜀 — 실시간 혼잡을 받지 못했다")
         return None
 
-    fig, ax = plt.subplots(figsize=(8.6, 6.0))
+    fig, ax = plt.subplots(figsize=(12.0, 4.8))
     xs = [m * 100 for _, _, m, _ in got]
     ys = [c for _, c, _, _ in got]
     r = _corr([m for _, _, m, _ in got], [float(c) for c in ys])
@@ -443,6 +468,7 @@ def figure3():
 
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
+    refresh = "--refresh" in sys.argv
     _setup()
     print("근거 통계를 받는 중…")
     s = _stats()
@@ -454,7 +480,7 @@ def main() -> None:
     print(f"  상위 16곳 모멘텀 범위 {got[2]:+.1f}% ~ {got[3]:+.1f}%")
     print(f"  관심↔방문 r = {got[1]:+.3f}  ·  n = {got[5]}")
 
-    q = figure3()
+    q = figure3(refresh)
     if q:
         r, n, cells = q
         print(f"  혼잡↔모멘텀 r = {r:+.3f}  ·  관측 {n}곳")
