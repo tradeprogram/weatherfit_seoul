@@ -1,4 +1,4 @@
-"""웨더핏 서울 백엔드.
+"""서울 크레센도 백엔드.
 
     python -m weatherfit.server            # http://127.0.0.1:8020
 
@@ -49,7 +49,7 @@ WEB = ROOT / "web"
 # 서울 대략 범위. 밖이면 사용자에게 알려 준다.
 SEOUL_BOUNDS = (37.41, 126.73, 37.72, 127.19)   # s, w, n, e
 
-app = FastAPI(title="웨더핏 서울", version="1.0.0")
+app = FastAPI(title="서울 크레센도", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 

@@ -75,7 +75,7 @@ def build(items: list[Content], when: datetime, weather: Weather) -> str:
     L: list[str] = []
 
     L += [
-        "# 웨더핏 서울 — 근거 수치",
+        "# 서울 크레센도 — 근거 수치",
         "",
         f"- 생성: {clock.now():%Y-%m-%d %H:%M}",
         f"- 판정 기준 시각: **{when:%Y-%m-%d(%a) %H:%M}**",
