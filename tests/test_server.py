@@ -431,7 +431,8 @@ class TestOffline:
         r = client.get("/sw.js")
         assert r.status_code == 200
         # 캐시 버전은 배포마다 올린다. 값을 고정하면 올릴 때마다 빨개진다.
-        assert re.search(r"const VERSION = 'weatherfit-v\d+'", r.text)
+        # 이름도 박지 않는다 — 서비스 이름이 바뀌었을 때 이 테스트가 걸렸다.
+        assert re.search(r"const VERSION = '[a-z0-9-]+-v\d+'", r.text)
 
     def test_판정_결과는_캐시하지_않는다(self, client):
         """어제의 '열려 있음'을 오늘 답으로 주면 이 앱의 존재 이유가 사라진다."""

@@ -13,7 +13,7 @@
      /api/*                               네트워크만. 오래된 판정은 위험하다.
        "지금 열려 있는가"에 어제 답을 주면 이 앱의 존재 이유가 사라진다.
 */
-const VERSION = 'weatherfit-v2';
+const VERSION = 'crescendo-v3';
 const SHELL = `${VERSION}-shell`;
 const TILES = `${VERSION}-tiles`;
 const TILE_MAX = 300;

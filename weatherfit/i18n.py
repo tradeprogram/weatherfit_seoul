@@ -254,6 +254,7 @@ PHRASES: dict[str, str] = {
     "근처에 지금 열린 행사가 없어 상시 콘텐츠로 시작합니다.":
         "No events are running nearby, so the plan starts from always-open places.",
     "시각 패턴을 찾지 못함": "No time pattern found",
+    "이용시간 정보 없음": "No opening-hours information",
     "걸어서": "walk",
     "태그 다섯 개 넘음": "over five tags",
     "무장애 정보 있음": "accessibility info",

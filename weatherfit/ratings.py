@@ -5,7 +5,7 @@
 그 위로는 1,000건당 $32~35다. 음식 1,259건을 한 번 받는 데 약 1만 원,
 시계열을 쌓으려면 매달 그만큼이다.
 
-공모전 산출물은 "이렇게 할 수 있다"를 보이는 자리고 실제 서비스 운영이
+지금 단계는 "이렇게 할 수 있다"를 보이는 자리고 실제 서비스 운영이
 아니므로, 평점 자리에 합성값을 넣어 **파이프라인이 도는 것만** 보인다.
 
     지금            합성값으로 품질 하한이 작동하는 것을 보인다
@@ -88,7 +88,7 @@ def build(verbose: bool = True) -> Path:
             "warning": "이 파일의 평점과 리뷰 수는 전부 합성값입니다. "
                        "실측이 아니며 실제 가게의 평가와 무관합니다.",
             "why": "구글 Places의 rating 필드가 Enterprise SKU라 유료다. "
-                   "공모전 산출물은 파이프라인 시연이 목적이므로 합성값을 쓴다.",
+                   "지금은 파이프라인 시연이 목적이므로 합성값을 쓴다.",
             "replace_with": "구글 Places Place Details (rating, userRatingCount)",
             "built_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
             "rows": len(rows), "floor": FLOOR, "min_reviews": MIN_REVIEWS,
