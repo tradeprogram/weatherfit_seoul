@@ -117,10 +117,12 @@ class TestUnitParity:
 
     # 화면에 일부러 두지 않는 규칙과 그 이유.
     EXEMPT = {
-        "실제": "일정 메모는 서버가 옮겨서 내려준다 — notes는 localize를 지난다",
         "호선": "지하철 안내는 비짓서울 원문이라 손대지 않는다",
         "개": "'3개'는 우리 문장에 안 쓴다 — 화면에서 '개월'을 깨뜨릴 위험만 남는다",
     }
+    # 통문장 규칙은 일정 메모에만 쓰이고, 메모는 서버가 옮겨서 내려준다.
+    # 낱말 규칙과 달리 화면이 다시 가질 이유가 없다.
+    SENTENCE = ("습니다", "주세요")
 
     def js_units(self):
         s = io.open("web/app.js", encoding="utf-8").read()
@@ -137,7 +139,9 @@ class TestUnitParity:
 
         js = self.js_units()
         missing = [pat for pat, _ in UNITS
-                   if not (self.words(pat) & set(self.EXEMPT)) and pat not in js]
+                   if not (self.words(pat) & set(self.EXEMPT))
+                   and not any(w in pat for w in self.SENTENCE)
+                   and pat not in js]
         assert not missing, f"화면 단위 규칙에 빠짐: {missing}"
 
     def test_긴_규칙이_먼저_온다(self):

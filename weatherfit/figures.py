@@ -5,6 +5,7 @@
 
     그림 1  왜 지금 이 문제가 있는가   콘텐츠 쏠림 · 판정 깔때기 · 운영정보 결손
     그림 2  왜 순위가 아니라 변화인가  수준↔변동 · 관심↔방문
+    그림 3  왜 두 축을 따로 재는가     지금 혼잡 × 방문 모멘텀 사분면
 
 모든 값은 실제 산출물에서 읽는다. 손으로 적은 수는 하나도 없다 —
 자료가 바뀌면 그림도 바뀌어야 하고, 그러라고 스크립트로 둔다.
@@ -304,6 +305,142 @@ def figure2() -> None:
     return r, r2, min(ms), max(ms), len(ff), len(pr)
 
 
+def _quadrant() -> tuple[list, str]:
+    """실시간 관측 121곳에 그 동네의 방문 모멘텀을 붙인다.
+
+    혼잡은 지금 값이고 모멘텀은 43개월 누적이다. 둘의 시간 축이 다르지만
+    그것이 요점이다 — 오래 쌓인 추세와 이 순간의 붐빔은 서로 다른 질문이고,
+    다르기 때문에 사분면이 생긴다.
+    """
+    import time
+
+    import requests
+
+    from .crowd import LIST_URL, UA
+    from .momentum import excess, table
+    from .routing import haversine_m
+    from .server import _dong_features
+
+    rows = requests.get(LIST_URL, params={"hotspotNm": ""},
+                        headers=UA, timeout=60).json().get("row") or []
+    dongs = _dong_features()
+    mom = {r["label"]: excess(r["axes"])
+           for r in (table("footfall").get("series") or {}).values()
+           if r.get("axes")}
+
+    out = []
+    for x in rows:
+        try:
+            lat, lon = float(x["x"]), float(x["y"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        best, bd = None, 1e12
+        for f in dongs:
+            d = haversine_m(lat, lon, f["lat"], f["lon"])
+            if d < bd:
+                best, bd = f, d
+        key = f"{best['gu']} {best['dong']}" if best else ""
+        if key in mom:
+            out.append((x["area_nm"], CROWD_NUM.get(x["area_congest_lvl"], 0),
+                        mom[key], key))
+    return out, time.strftime("%Y-%m-%d %H:%M")
+
+
+CROWD_NUM = {"여유": 1, "보통": 2, "약간 붐빔": 3, "붐빔": 4}
+CROWD_TXT = {1: "여유", 2: "보통", 3: "약간 붐빔", 4: "붐빔"}
+RISE = 0.15          # 서비스가 '뜨는 중'이라 부르는 기준
+BUSY = 3             # 이 위가 '붐빈다'
+
+
+def figure3():
+    """지금 혼잡 × 방문 모멘텀. 이 사분면이 곧 제품이다."""
+    import random
+
+    got, when = _quadrant()
+    if not got:
+        print("  그림 3 건너뜀 — 실시간 혼잡을 받지 못했다")
+        return None
+
+    fig, ax = plt.subplots(figsize=(8.6, 6.0))
+    xs = [m * 100 for _, _, m, _ in got]
+    ys = [c for _, c, _, _ in got]
+    r = _corr([m for _, _, m, _ in got], [float(c) for c in ys])
+
+    # 네 등급뿐이라 점이 가로줄로 겹친다. 세로로만 흩어 등급은 지킨다.
+    random.seed(7)
+    jit = [y + random.uniform(-0.22, 0.22) for y in ys]
+
+    ax.axvline(RISE * 100, color=INK, lw=0.9, ls=(0, (5, 4)), zorder=1)
+    ax.axhline(BUSY - 0.5, color=INK, lw=0.9, ls=(0, (5, 4)), zorder=1)
+    ax.axhspan(0.4, BUSY - 0.5, xmin=0, xmax=1, color="#f4f7f9", zorder=0)
+
+    for x, y, (nm, c, m, _) in zip(xs, jit, got):
+        rising, busy = m >= RISE, c >= BUSY
+        if rising and not busy:
+            ax.scatter(x, y, s=74, color=RUST, zorder=4,
+                       edgecolor="white", linewidth=0.8)
+        elif rising and busy:
+            ax.scatter(x, y, s=58, facecolor="white", zorder=3,
+                       edgecolor=INK, linewidth=1.3)
+        else:
+            ax.scatter(x, y, s=40, color=LIGHT, zorder=2,
+                       edgecolor="white", linewidth=0.6)
+
+    n_q = {}
+    for nm, c, m, _ in got:
+        n_q[(m >= RISE, c >= BUSY)] = n_q.get((m >= RISE, c >= BUSY), 0) + 1
+
+    # 오른쪽에 빈 칸을 만들어 사분면 이름이 점 위에 앉지 않게 한다.
+    lo, hi = min(xs), max(xs)
+    pad = (hi - lo) * 0.06
+    ax.set_xlim(lo - pad, hi + (hi - lo) * 0.42)
+
+    def corner(tx, ty, va, head, n, color):
+        ax.text(tx, ty, f"{head}\n{n}곳", transform=ax.transAxes, ha="right",
+                va=va, fontsize=11.5, color=color, linespacing=1.5)
+
+    corner(.99, .015, "bottom", "뜨는데 아직 안 붐빈다",
+           n_q.get((True, False), 0), RUST)
+    corner(.99, .97, "top", "이미 붐비는데 더 뜬다",
+           n_q.get((True, True), 0), INK)
+    ax.text(.015, .97, f"붐비지만 늘지 않는다\n{n_q.get((False, True), 0)}곳",
+            transform=ax.transAxes, ha="left", va="top", fontsize=11.5,
+            color=MID, linespacing=1.5)
+    ax.text(.015, .04, f"조용하고 그대로다\n{n_q.get((False, False), 0)}곳",
+            transform=ax.transAxes, ha="left", va="bottom", fontsize=11.5,
+            color=MID, linespacing=1.5)
+
+    # 이름은 사분면마다 가장 뚜렷한 것만. 많이 붙이면 그림이 표가 된다.
+    # 오른쪽 끝 점은 이름을 왼쪽으로 뉘어야 사분면 이름과 안 겹친다.
+    show = {"성수카페거리", "군자역", "잠실 관광특구", "경복궁",
+            "광장(전통)시장", "잠실새내역"}
+    edge = lo + (hi - lo) * 0.72
+    for x, y, (nm, c, m, _) in zip(xs, jit, got):
+        if nm in show:
+            left = x >= edge
+            ax.annotate(nm, (x, y), textcoords="offset points",
+                        xytext=(-9 if left else 8, 7), fontsize=10,
+                        color=INK, ha="right" if left else "left")
+
+    ax.set_yticks([1, 2, 3, 4])
+    ax.set_yticklabels([CROWD_TXT[i] for i in (1, 2, 3, 4)])
+    ax.set_ylim(0.45, 4.55)
+    ax.set_xlabel("동네 방문 모멘텀 (전년 동월 대비, %)")
+    ax.set_ylabel("지금 혼잡도")
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v:+.0f}"))
+    ax.grid(axis="x", color=GRID, lw=0.8, zorder=0)
+    ax.set_axisbelow(True)
+    ax.text(.5, -0.175,
+            f"상관계수 r = {r:+.3f}  ·  결정계수 {r ** 2:.3f}  —  "
+            f"모멘텀은 지금의 붐빔을 거의 설명하지 못한다",
+            transform=ax.transAxes, fontsize=11.5, color=RUST, ha="center")
+    ax.set_title(f"실시간 관측 {len(got)}곳  ·  {when} 기준",
+                 fontsize=12, pad=14, color=MID)
+
+    fig.tight_layout()
+    _save(fig, "fig03_차별성_혼잡과모멘텀")
+    return r, len(got), n_q
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     _setup()
@@ -316,6 +453,13 @@ def main() -> None:
     print(f"  수준↔모멘텀 r = {got[0]:+.3f}  ·  행정동 {got[4]}개")
     print(f"  상위 16곳 모멘텀 범위 {got[2]:+.1f}% ~ {got[3]:+.1f}%")
     print(f"  관심↔방문 r = {got[1]:+.3f}  ·  n = {got[5]}")
+
+    q = figure3()
+    if q:
+        r, n, cells = q
+        print(f"  혼잡↔모멘텀 r = {r:+.3f}  ·  관측 {n}곳")
+        print(f"  뜨는데 안 붐빔 {cells.get((True, False), 0)}곳  ·  "
+              f"이미 붐비고 더 뜸 {cells.get((True, True), 0)}곳")
 
 
 if __name__ == "__main__":

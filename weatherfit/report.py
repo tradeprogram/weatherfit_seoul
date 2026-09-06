@@ -19,6 +19,7 @@ from pathlib import Path
 from .models import Content
 from .normalize import parse_hours, tag_environment
 from .validate import Weather, check_period, evaluate
+from . import clock
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "data" / "raw"
@@ -76,7 +77,7 @@ def build(items: list[Content], when: datetime, weather: Weather) -> str:
     L += [
         "# 웨더핏 서울 — 근거 수치",
         "",
-        f"- 생성: {datetime.now():%Y-%m-%d %H:%M}",
+        f"- 생성: {clock.now():%Y-%m-%d %H:%M}",
         f"- 판정 기준 시각: **{when:%Y-%m-%d(%a) %H:%M}**",
         f"- 기준 날씨: **{weather.describe()}**",
         f"- 대상: **{total:,}건** " + ", ".join(f"{k} {v:,}" for k, v in by_cat.most_common()),
@@ -208,7 +209,7 @@ def main() -> None:
     p.add_argument("--temp", type=float, default=22.0)
     args = p.parse_args()
 
-    when = datetime.strptime(args.at, "%Y-%m-%d %H:%M") if args.at else datetime.now()
+    when = datetime.strptime(args.at, "%Y-%m-%d %H:%M") if args.at else clock.now()
     weather = (Weather(temp_c=args.temp, precip_mm=3.0, pty="비", sky="흐림")
                if args.rain else Weather(temp_c=args.temp))
 

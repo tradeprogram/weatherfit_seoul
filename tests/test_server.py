@@ -57,6 +57,37 @@ class TestWhere:
                           params={"lat": "a", "lon": "b"}).status_code == 422
 
 
+class TestClock:
+    """'지금'은 서울의 지금이어야 한다.
+
+    배포처가 UTC로 돌아 서울 오후 4시를 오전 7시로 판정했다. 화면은
+    브라우저가 시각을 실어 보내 멀쩡했고, 시각을 안 보내는 경로에서만
+    조용히 틀렸다 — 통계에서 '지금 갈 수 있는 곳'이 1,507건에서
+    215건으로 줄어 있었다.
+    """
+
+    def test_기계_시간대와_무관하게_KST다(self):
+        from datetime import datetime, timedelta, timezone
+
+        from weatherfit import clock
+
+        utc = datetime.now(timezone.utc)
+        gap = clock.now() - utc.replace(tzinfo=None)
+        assert abs(gap - timedelta(hours=9)) < timedelta(seconds=5)
+
+    def test_순진한_datetime을_준다(self):
+        """나머지 코드가 전부 tz 없는 datetime을 쓴다. 하나만 tz를
+        달고 오면 비교하는 자리에서 전부 터진다."""
+        from weatherfit import clock
+
+        assert clock.now().tzinfo is None
+
+    def test_시각을_안_보내도_서울_기준이다(self, client):
+        from weatherfit import clock, server
+
+        assert abs((server.parse_when(None) - clock.now()).total_seconds()) < 5
+
+
 class TestSearch:
     """지명 검색. 내 위치가 아닌 곳도 보게 하는 입구다."""
 

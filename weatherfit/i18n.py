@@ -129,6 +129,9 @@ PHRASES: dict[str, str] = {
     "도착 시각에 문을 열어 두는가": "Is it open when you arrive",
     "지금 날씨에 실외를 권할 수 있는가": "Can we suggest outdoors in this weather",
 
+    "근처 행사보다 점수가 높은 곳으로 시작합니다.":
+        "Starting from a place that scored higher than the nearby events.",
+
     # ── 위치 안내
     # '내 위치로'를 넣었더니 '내 위치로 시작'이 'Back to my location 시작'이
     # 됐다. 긴 쪽을 같이 두지 않으면 짧은 키가 문장을 반만 먹는다.
@@ -296,6 +299,8 @@ PHRASES: dict[str, str] = {
 # 숫자에 붙는 단위는 낱말로 바꾸면 다른 말을 망가뜨린다. '조회'가 '조x'가
 # 되고 '분위기'가 'min위기'가 된다. 숫자가 앞에 붙을 때만 바꾼다.
 UNITS: list[tuple[str, str]] = [
+    (r'([\d,]+)곳은 운영시간 정보가 없어 일반적인 영업시간\(([\d,]+)~([\d,]+)시\)으로 가정했습니다\. 방문 전 확인해 주세요\.',
+     r'For \1 stop(s) the opening hours are unknown, so we assumed a normal day (\2:00-\3:00). Please check before you go.'),
     # 숫자가 가운데 든 문장은 구절 표에 담을 수 없다. 통째로 규칙을 둔다 —
     # 반만 옮겨져 "뒤쪽 1 places을 뺐습니다"가 되는 것이 제일 나쁘다.
     (r"실제 이동시간으로 다시 계산해 뒤쪽 ([\d,]+)곳을 뺐습니다\.",
@@ -365,8 +370,8 @@ def line(s: str, lang: str) -> str:
 # 응답에서 **우리가 만든** 필드만 옮긴다. 비짓서울 원문(use_time_raw 등)은
 # 손대지 않는다 — 영업시간 원문을 어설프게 번역하면 없는 정보를 만든다.
 OURS = ("verdict", "stage", "reason", "verdict_reason", "line", "label",
-        "note", "level", "trend_label", "role_name", "desc", "sky",
-        "pty", "environment_text", "summary", "kind")
+        "note", "level", "relief_level", "trend_label", "role_name", "desc",
+        "sky", "pty", "environment_text", "summary", "kind")
 
 # 외부에서 그대로 받은 것은 옮기지 않는다. 경로 안내의 '새문안로'는
 # 거리 이름이라 번역 대상이 아니고, 옮기면 오히려 못 찾는다.

@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 import requests
 
 from .validate import Weather
+from . import clock
 
 # (호스트, 인증 파라미터 이름). 앞에서부터 시도한다.
 KMA_ENDPOINTS = (
@@ -126,7 +127,7 @@ def _portal_error(body: dict) -> str:
 def get_weather(lat: float = SEOUL_CITY_HALL[0], lon: float = SEOUL_CITY_HALL[1],
                 now: datetime | None = None, api_key: str | None = None) -> Weather:
     """현재 기상 상태. 키가 없거나 호출이 실패하면 fallback 값을 돌려준다."""
-    now = now or datetime.now()
+    now = now or clock.now()
     key = api_key or os.environ.get("KMA_API_KEY", "")
     if not key:
         w = Weather(temp_c=21.0, precip_mm=0.0, sky="맑음", pty="없음")

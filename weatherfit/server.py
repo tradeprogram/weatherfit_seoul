@@ -38,6 +38,7 @@ from .report import load as load_items
 from .routing import haversine_m, router
 from .validate import Weather, check_period, evaluate_place
 from .weather import SEOUL_CITY_HALL, get_weather
+from . import clock
 
 # 이 비율을 넘겨야 그 어권을 '지원한다'고 말한다
 LANG_MIN_COVERAGE = 0.5
@@ -98,13 +99,13 @@ def resolve_weather(mode: str, lat: float, lon: float, when: datetime) -> Weathe
 
 def parse_when(at: str | None) -> datetime:
     if not at:
-        return datetime.now()
+        return clock.now()
     for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
             return datetime.strptime(at, fmt)
         except ValueError:
             continue
-    return datetime.now()
+    return clock.now()
 
 
 def in_seoul(lat: float, lon: float) -> bool:
