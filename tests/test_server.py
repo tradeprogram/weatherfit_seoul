@@ -88,6 +88,54 @@ class TestClock:
         assert abs((server.parse_when(None) - clock.now()).total_seconds()) < 5
 
 
+class TestWakingBar:
+    """서버가 깨는 동안 화면이 아무 말도 안 하면 고장으로 읽힌다.
+
+    API는 무료 티어라 15분 놀면 자고 깨는 데 50초쯤 걸리는데, 화면은
+    정적 호스팅이라 즉시 뜬다. 그 사이가 통째로 침묵이었다.
+    """
+
+    def html(self):
+        import io as _io
+        return _io.open("web/index.html", encoding="utf-8").read()
+
+    def js(self):
+        import io as _io
+        return _io.open("web/app.js", encoding="utf-8").read()
+
+    def test_알림_자리가_있다(self):
+        h = self.html()
+        assert 'id="waking-bar"' in h
+        assert 'aria-live="polite"' in h, "읽어 주는 장치가 알아채야 한다"
+        assert 'data-en="Waking the server"' in h, "영어로도 나와야 한다"
+
+    def test_빠를_때는_안_띄운다(self):
+        """평소 요청은 100ms 안쪽이다. 매번 깜빡이면 그게 더 시끄럽다."""
+        js = self.js()
+        assert "const WAKE_AFTER" in js
+        gap = int(js.split("const WAKE_AFTER = ")[1].split(";")[0])
+        assert gap >= 1500, "너무 일찍 뜨면 정상 요청에도 깜빡인다"
+
+    def test_모든_서버_호출이_알린다(self):
+        """하나라도 빠지면 그 경로에서만 침묵한다."""
+        js = self.js()
+        for fn in ("getJSON", "postJSON"):
+            i = js.index(f"async function {fn}(")
+            body = js[i:i + 700]
+            assert "wakeStart()" in body, f"{fn}이 안 알린다"
+            assert "wakeEnd()" in body, f"{fn}이 안 끝낸다"
+        # 도우미 한 턴도 같은 서버를 부른다
+        i = js.index("'/api/agent'")
+        assert "wakeStart()" in js[i - 400:i], "도우미 호출이 안 알린다"
+
+    def test_실패해도_띠를_내린다(self):
+        """finally에 두지 않으면 서버가 죽었을 때 띠가 영원히 남는다."""
+        js = self.js()
+        i = js.index("async function getJSON(")
+        body = js[i:i + 700]
+        assert "finally" in body and body.index("finally") < body.index("wakeEnd()")
+
+
 class TestSearch:
     """지명 검색. 내 위치가 아닌 곳도 보게 하는 입구다."""
 

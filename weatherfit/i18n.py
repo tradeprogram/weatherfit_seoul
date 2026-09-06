@@ -119,6 +119,13 @@ PHRASES: dict[str, str] = {
         "Search an area or place (e.g. Seongsu, Gyeongbokgung)",
     "장소 검색": "Place search",
     "찾지 못했습니다": "No match",
+    # 서버가 안 될 때 나오는 말. 정작 그때 영어로 안 나오면 곤란하다.
+    "서버에 연결하지 못했습니다.": "Could not reach the server.",
+    "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.":
+        "That request did not go through. Please try again in a moment.",
+    "서버를 깨우는 중입니다": "Waking the server",
+    "쉬고 있던 서버라 처음 한 번은 1분쯤 걸립니다.":
+        "It sleeps when idle, so the first request takes up to a minute.",
     "내 위치로": "Back to my location",
     "자세히 보기": "See details",
     "지역": "Area",
@@ -279,6 +286,9 @@ PHRASES: dict[str, str] = {
     "제외": "excluded",
     "직접 지정": "set manually",
 
+    # '중'은 '3곳 중 1곳'을 위한 키다. '위치 확인 중'에 걸려
+    # '위치 확인 of'가 됐다. 긴 쪽을 같이 둬서 먼저 맞게 한다.
+    "위치 확인 중": "Finding you",
     "중": "of",
     "사용": "used",
     "일정 보기": "See the plan",
