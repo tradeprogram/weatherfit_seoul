@@ -107,6 +107,68 @@ class TestLiveResponse:
         assert not left, f"영어 응답에 한글이 남았다: {left[:6]}"
 
 
+class TestLanguageSticks:
+    """고른 언어를 서비스가 도로 뺏어 가면 안 된다.
+
+    영어로 고르고 '내 위치로 시작'을 누르면 새로 그려지는 화면이 한국어로
+    나왔다. `syncLanguages()`가 서버에 어떤 어권을 쓸 수 있는지 묻고,
+    **못 물어봤을 때도** 한국어만 있다고 단정해 고른 언어를 덮어썼기
+    때문이다. 배포본에서 잘 났다 — 무료 티어 API는 15분 놀면 자고 깨는 데
+    50초가 걸리는데 화면은 즉시 뜨므로, 그 사이에 실패한 응답이 돌아온다.
+
+    못 물어본 것과 없는 것은 다르다.
+    """
+
+    def app(self):
+        return io.open("web/app.js", encoding="utf-8").read()
+
+    def block(self, name):
+        """그 함수의 본문만 떼어 온다."""
+        s = self.app()
+        i = s.index(f"function {name}(")
+        depth, j = 0, s.index("{", i)
+        for k in range(j, len(s)):
+            if s[k] == "{":
+                depth += 1
+            elif s[k] == "}":
+                depth -= 1
+                if depth == 0:
+                    return s[i:k + 1]
+        raise AssertionError(f"{name} 본문을 못 찾음")
+
+    def braces(self, text, start):
+        """`start`부터 첫 중괄호 한 쌍만 떼어 온다."""
+        depth, i = 0, text.index("{", start)
+        for k in range(i, len(text)):
+            if text[k] == "{":
+                depth += 1
+            elif text[k] == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[i:k + 1]
+        raise AssertionError("짝이 안 맞는 중괄호")
+
+    def test_못_물어봤다고_한국어로_내리지_않는다(self):
+        body = self.block("syncLanguages")
+        catch = self.braces(body, body.index("catch"))
+        assert "langsReady" not in catch, "실패 처리에서 어권 목록을 단정했다"
+        assert "S.lang" not in catch, "실패 처리에서 고른 언어를 덮어썼다"
+
+    def test_내릴_때는_화면도_같이_내린다(self):
+        """상태만 바꾸면 화면은 영어인데 다음에 그리는 것부터 한국어가 된다."""
+        body = self.block("syncLanguages")
+        i = body.index("S.lang = 'ko'")
+        assert "applyChrome()" in body[i:], "언어를 내리면서 화면을 안 고쳤다"
+
+    def test_저장한_일정이_언어를_바꾸지_않는다(self):
+        """언어는 지금 보고 있는 사람의 것이다."""
+        assert "S.lang" not in self.block("restorePlan")
+
+    def test_링크의_어권은_아는_값만_받는다(self):
+        s = self.app()
+        assert "LANGS.includes(p.get('lang'))" in s
+        assert "const LANGS = [" in s
+
 class TestUnitParity:
     """숫자에 붙는 단위 규칙도 서버와 화면이 같아야 한다.
 

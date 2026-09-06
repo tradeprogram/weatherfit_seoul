@@ -8,6 +8,7 @@ const ROLE_NAME  = { anchor:'앵커', food:'식사·카페', spot:'둘러보기'
 const LS_KEY = 'weatherfit.origin';
 const LS_TASTE = 'weatherfit.taste';
 const LS_LANG = 'weatherfit.lang';
+const LANGS = ['ko', 'en'];      // 화면이 실제로 그릴 수 있는 어권
 const LS_VAULT = 'weatherfit.vault';
 
 const S = {
@@ -1230,7 +1231,9 @@ function restorePlan(id) {
   const v = vaultLoad().find(x => x.id === id);
   if (!v) return;
   S.lat = v.lat; S.lon = v.lon; S.at = v.at; S.hours = v.hours;
-  S.mode = v.mode; S.lang = v.lang || 'ko'; S.interests = v.interests || [];
+  // 언어는 지금 보고 있는 사람의 것이다. 저장할 때 한국어였다고
+  // 영어로 보던 화면을 한국어로 되돌리면 안 된다.
+  S.mode = v.mode; S.interests = v.interests || [];
   if (v.at) $('#at').value = v.at;
   syncControls();
   $('#vault').hidden = true;
@@ -1278,7 +1281,8 @@ function applyUrlOptions() {
       b.classList.toggle('on', b.dataset.mode === S.mode));
   }
   if (p.has('at')) { S.at = p.get('at'); $('#at').value = S.at; }
-  if (p.has('lang')) S.lang = p.get('lang');
+  // 링크에 실려 온 값이다. 아는 어권일 때만 받는다.
+  if (p.has('lang') && LANGS.includes(p.get('lang'))) S.lang = p.get('lang');
   if (p.has('i')) {
     S.interests = p.get('i').split(',').filter(Boolean);
     $$('#interests button').forEach(b =>
@@ -1649,18 +1653,32 @@ function applyChrome() {
 
 async function syncLanguages() {
   // 아직 수집하지 않은 어권은 눌러도 한국어가 나온다. 미리 잠가 둔다.
+  //
+  // 다만 **못 물어본 것과 없는 것은 다르다.** 예전에는 health 요청이
+  // 실패하면 '한국어만 있다'로 단정하고 사용자가 고른 언어를 덮어썼다.
+  // 배포본에서 이게 잘 났다 — 무료 티어 API는 15분 놀면 자고 깨는 데
+  // 50초가 걸리는데 화면은 즉시 뜨므로, 영어를 고르고 시작을 누르는
+  // 사이에 실패한 응답이 돌아와 한국어로 되돌렸다.
+  let langs = null;
   try {
     const h = await getJSON('/api/health');
-    S.langsReady = h.languages || ['ko'];
-  } catch (e) { S.langsReady = ['ko']; }
+    if (Array.isArray(h.languages) && h.languages.length) langs = h.languages;
+  } catch (e) { /* 못 물어봤다. 그렇다고 없는 건 아니다 */ }
+  if (!langs) return;
+
+  S.langsReady = langs;
   $$('#lang-seg button').forEach(b => {
-    const ok = S.langsReady.includes(b.dataset.lang);
+    const ok = langs.includes(b.dataset.lang);
     b.disabled = !ok;
     b.title = ok ? '' : '이 언어는 아직 수집되지 않았습니다';
   });
-  if (!S.langsReady.includes(S.lang)) {
+  // 정말 없는 언어일 때만 내린다. 내릴 때는 화면도 같이 되돌린다 —
+  // 상태만 바꾸면 화면은 영어인데 다음에 그리는 것부터 한국어가 된다.
+  if (!langs.includes(S.lang)) {
     S.lang = 'ko';
     $$('#lang-seg button').forEach(x => x.classList.toggle('on', x.dataset.lang === 'ko'));
+    try { localStorage.setItem(LS_LANG, S.lang); } catch (e) { /* 무시 */ }
+    applyChrome();
   }
 }
 
@@ -1668,7 +1686,7 @@ function init() {
   loadTaste();
   try {
     const saved = localStorage.getItem(LS_LANG);
-    if (saved) {
+    if (saved && LANGS.includes(saved)) {
       S.lang = saved;
       $$('#lang-seg button').forEach(b =>
         b.classList.toggle('on', b.dataset.lang === saved));
