@@ -88,6 +88,50 @@ class TestClock:
         assert abs((server.parse_when(None) - clock.now()).total_seconds()) < 5
 
 
+class TestSeoulClockOnScreen:
+    """화면의 '지금'도 서울의 지금이어야 한다.
+
+    서버는 clock.py로 고쳤는데 화면이 남아 있었다. sensibleStart()가
+    `new Date()` — 곧 브라우저가 놓인 시간대를 썼다. 로스앤젤레스에서
+    열면 그곳 04시를 보고 '오늘 10시'로 잡는데, 서울은 이미 그날
+    저녁이라 **지나간 시각으로 일정을 짜 준다.**
+
+    외국인이 쓸 서비스라 더 그렇다 — 노트북은 집 시간대 그대로인
+    경우가 흔하다.
+    """
+
+    def js(self):
+        import io as _io
+        return _io.open("web/app.js", encoding="utf-8").read()
+
+    def test_서울_시계가_있다(self):
+        js = self.js()
+        assert "function seoulNow()" in js
+        # 한국은 1988년 이후 서머타임이 없다. 고정 오프셋이 언제나 맞다.
+        assert "KST_MIN = 9 * 60" in js
+
+    def test_시작_시각이_서울_시계를_쓴다(self):
+        js = self.js()
+        i = js.index("function sensibleStart()")
+        body = js[i:i + 500]
+        assert "seoulNow()" in body, "브라우저 시간대를 그대로 쓰고 있다"
+        assert "new Date()" not in body
+
+    def test_입력값은_벽시계_그대로_찍는다(self):
+        """toISOString은 UTC로 바꿔 버린다. 오프셋을 손으로 더하고 빼면
+        어긋날 자리가 한 번 더 생긴다."""
+        js = self.js()
+        i = js.index("function toLocalInput(")
+        body = js[i:i + 400]
+        assert "toISOString" not in body
+        assert "getTimezoneOffset" not in body
+
+    def test_시간대가_다르면_알려_준다(self):
+        js = self.js()
+        assert "function offSeoul()" in js
+        assert "기기 시간대가 서울과 달라 서울 시각으로 맞췄습니다." in js
+
+
 class TestWakingBar:
     """서버가 깨는 동안 화면이 아무 말도 안 하면 고장으로 읽힌다.
 
