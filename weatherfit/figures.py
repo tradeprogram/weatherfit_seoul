@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import statistics as st
 import sys
 from pathlib import Path
@@ -26,7 +27,9 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager, ticker
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = Path.home() / "Desktop" / "하수범_공모전" / "서울관광재단" / "figure"
+# 저장 위치. 개인 폴더를 코드에 박아 두지 않는다 — 환경변수로 받고
+# 없으면 저장소 안에 쌓는다.
+OUT = Path(os.environ.get("FIGURE_DIR", ROOT / "data" / "figures"))
 
 # 기존 논문 피규어에서 뽑은 색. 슬레이트 4단 + 러스트 강조 하나.
 INK = "#1e2a33"
