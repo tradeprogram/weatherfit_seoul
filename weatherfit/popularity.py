@@ -15,7 +15,7 @@
 
 그래서 위키백과를 기본 신호로 쓰고 나머지는 키가 있을 때 더한다.
 
-조회는 느리다(3,788건 × 2회 호출). 요청 경로에서 하지 않는다.
+조회는 느리다(3,802건 × 2회 호출). 요청 경로에서 하지 않는다.
 
     python -m weatherfit.popularity build          # data/popularity.json 생성
     python -m weatherfit.popularity build --limit 200

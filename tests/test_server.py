@@ -215,7 +215,7 @@ class TestSearch:
                           params={"q": "없는지명xyz"}).json()["items"] == []
 
     def test_한_글자는_찾지_않는다(self, client):
-        """타이핑 중간마다 3,788건을 훑을 이유가 없다."""
+        """타이핑 중간마다 3,802건을 훑을 이유가 없다."""
         assert client.get("/api/search", params={"q": "성"}).json()["items"] == []
 
     def test_같은_자리를_두_번_주지_않는다(self, client):

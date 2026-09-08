@@ -272,7 +272,7 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                 and not any(a in (p.content.category_path or p.content.category)
                             for a in avoid)]
 
-    # 반경 밖은 판정할 이유가 없다. 거리로 먼저 자르면 3,788건 중 수백 건만
+    # 반경 밖은 판정할 이유가 없다. 거리로 먼저 자르면 3,802건 중 수백 건만
     # 운영시간·날씨 판정을 거친다 — 요청당 40ms가 여기서 빠진다.
     # 근처가 통째로 비었을 때만 서울 전역을 다시 본다.
     wide = False

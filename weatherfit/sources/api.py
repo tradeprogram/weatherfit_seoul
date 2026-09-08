@@ -17,6 +17,31 @@ from ..models import CATEGORIES, Content
 
 BASE = "https://api-call.visitseoul.net/api/v1"
 
+# 요금 필드는 설명이 아니라 유무 플래그로 올 때가 있다. 'N'을 요금 안내로
+# 읽으면 화면에 'N'이라고 적힌다.
+_FLAGS = {"N", "Y", "n", "y"}
+
+
+def _text(v) -> str:
+    """HTML이 섞여 오면 본문만 남긴다.
+
+    상세 응답의 `post_desc`는 편집기가 만든 마크업 덩어리다(20/20이 그랬다).
+    길이 중앙값이 1,676자인데 실제 글은 224자쯤이라, 그대로 두면 품질
+    점수가 글이 아니라 마크업을 재게 된다.
+    """
+    t = (v or "").strip()
+    if not t:
+        return ""
+    if "<" in t and ">" in t:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(t, "lxml")
+        for junk in soup(["script", "style"]):
+            junk.decompose()
+        t = soup.get_text("\n", strip=True)
+    # 탭·개행이 끝에 붙어 오는 필드가 있다. 사이 공백도 하나로 줄인다.
+    return " ".join(t.split())
+
 
 class ApiSource:
     name = "api"
@@ -103,29 +128,33 @@ class ApiSource:
         path = d.get("cate_depth") or ""
         if isinstance(path, list):
             path = " > ".join(str(p) for p in path)
+        path = _text(path).replace(" > ", " > ")
+
+        fee = _text(extra.get("trrsrt_use_chrge_guidance")
+                    or extra.get("trrsrt_use_chrge", ""))
 
         return Content(
             cid=d.get("cid", ""),
-            title=d.get("post_sj", ""),
+            title=_text(d.get("post_sj", "")),
             category=path.split(">")[0].strip(),
-            category_path=path.strip(),
-            summary=(d.get("sumry") or "").strip(),
-            description=d.get("post_desc", ""),
-            tags=list(d.get("tag") or []),
-            schedule_start=d.get("schdul_info_bgnde", "") or "",
-            schedule_end=d.get("schdul_info_endde", "") or "",
-            use_time_raw=extra.get("cmmn_use_time", "") or "",
-            closed_days_raw=extra.get("closed_days", "") or "",
-            address=traffic.get("new_adres") or traffic.get("adres") or "",
+            category_path=path,
+            summary=_text(d.get("sumry")),
+            description=_text(d.get("post_desc")),
+            tags=[t for t in (_text(x) for x in (d.get("tag") or [])) if t],
+            schedule_start=_text(d.get("schdul_info_bgnde")),
+            schedule_end=_text(d.get("schdul_info_endde")),
+            use_time_raw=_text(extra.get("cmmn_use_time")),
+            closed_days_raw=_text(extra.get("closed_days")),
+            address=_text(traffic.get("new_adres") or traffic.get("adres")),
             lon=num(traffic.get("map_position_x")),
             lat=num(traffic.get("map_position_y")),
-            subway_raw=traffic.get("subway_info", "") or "",
-            phone=extra.get("cmmn_telno", "") or "",
-            homepage=extra.get("cmmn_hmpg_url", "") or "",
-            fee_raw=extra.get("trrsrt_use_chrge_guidance")
-                    or extra.get("trrsrt_use_chrge", "") or "",
-            accessibility=list(extra.get("disabled_facility") or []),
-            note=extra.get("cmmn_important", "") or "",
+            subway_raw=_text(traffic.get("subway_info")),
+            phone=_text(extra.get("cmmn_telno")),
+            homepage=_text(extra.get("cmmn_hmpg_url")),
+            fee_raw="" if fee in _FLAGS else fee,
+            accessibility=[a for a in (_text(x) for x in
+                                       (extra.get("disabled_facility") or [])) if a],
+            note=_text(extra.get("cmmn_important")),
             lang=lang,
             source=self.name,
         )

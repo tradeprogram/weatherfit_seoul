@@ -25,7 +25,7 @@ Living Emotion · Inclusive Choice · Trusted Global Hub · Your Seoul.
     Trusted Global Hub  `accessibility`(무장애 시설 배열)와 지하철 정보,
                         번역 보유 어권 수. 전부 API가 준 실제 필드다.
     Inclusive Choice    그 행정동에 실제로 몇 분류가 모여 있는가.
-                        우리는 3,788건을 행정동에 다 붙여 두었다.
+                        우리는 3,802건을 행정동에 다 붙여 두었다.
 
 나머지 셋(Vibrant · Immersive Local · Living Emotion)은 분류 체계와
 해시태그로 판정한다. 소분류를 먼저 보는 것은 `tag_environment`와 같은
