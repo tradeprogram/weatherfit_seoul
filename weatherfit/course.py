@@ -87,6 +87,7 @@ class Step:
             "ends_today": self.ends_today,
             "hours_assumed": self.hours_assumed,
             "trend": _trend_badge(i.cid),
+            "crowd": _crowd_badge(self.place),
             "why": self.why,
         }
 
@@ -95,6 +96,23 @@ def _trend_badge(cid: str) -> dict | None:
     """카드에 붙일 트렌드 한 줄. 상세 패널의 '선정 근거'와 같은 자료다."""
     from .momentum import badge
     return badge(cid)
+
+
+def _crowd_badge(place) -> dict | None:
+    """카드에 붙일 혼잡 한 줄.
+
+    선정 근거에는 '덜 붐빔'이 나오는데 정작 일정 카드에는 배지가 안
+    붙고 있었다. 화면은 `crowdBadge(s.crowd)`로 그릴 준비가 되어
+    있었는데 내보내는 자리만 빠져 있었다.
+
+    모양은 후보 목록이 쓰는 것과 **똑같아야** 한다. 화면이 같은 함수로
+    그리므로, 여기서 조금 다르게 만들면(예: 시각을 미리 잘라 두면)
+    그 함수가 한 번 더 자르며 빈 값이 된다. 그래서 새로 만들지 않고
+    서버가 쓰던 것을 그대로 부른다.
+    """
+    from .crowd import badge
+
+    return badge(place.lat, place.lon)
 
 
 @dataclass

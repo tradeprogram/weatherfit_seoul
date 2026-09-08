@@ -178,6 +178,31 @@ def relief(got: dict | None) -> dict | None:
     return None
 
 
+def badge(lat: float | None, lon: float | None) -> dict | None:
+    """카드에 붙일 혼잡 한 줄. 관측 지역이 800m 안에 없으면 None이다.
+
+    남의 동네 혼잡을 이 자리의 혼잡이라고 말하면 안 된다. 121곳이 서울
+    전역을 덮지 않는다는 사실을 감추지 않는다.
+
+    후보 목록과 일정 카드가 **같은 모양**을 써야 한다. 화면이 하나의
+    `crowdBadge()`로 그리기 때문에, 한쪽만 다르게 만들면 그 함수가
+    기대하는 자리(`crowded` 플래그, 자르지 않은 `relief_at`)가 어긋나
+    배지가 조용히 사라진다.
+    """
+    if not (lat and lon):
+        return None
+    got = at(lat, lon)
+    if not got:
+        return None
+    ease = relief(got)
+    return {"level": got["level"], "message": got["message"],
+            "min": got["min"], "max": got["max"],
+            "visitor_rate": got["visitor_rate"], "at": got["at"],
+            "crowded": is_crowded(got),
+            "relief_at": (ease or {}).get("at", ""),
+            "relief_level": (ease or {}).get("level", "")}
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     import argparse

@@ -373,25 +373,11 @@ def thermal_map():
 
 
 def _crowd_of(p) -> dict | None:
-    """이 장소의 지금 혼잡. 관측 지역이 800m 안에 없으면 None이다.
+    """이 장소의 지금 혼잡. 실제 계산은 crowd.badge가 한다 —
+    일정 카드도 같은 모양을 써야 해서 그쪽으로 옮겼다."""
+    from .crowd import badge
 
-    남의 동네 혼잡을 이 자리의 혼잡이라고 말하면 안 된다. 121곳이
-    서울 전역을 덮지 않는다는 사실을 감추지 않는다.
-    """
-    from .crowd import at, is_crowded, relief
-
-    if not (p.lat and p.lon):
-        return None
-    got = at(p.lat, p.lon)
-    if not got:
-        return None
-    ease = relief(got)
-    return {"level": got["level"], "message": got["message"],
-            "min": got["min"], "max": got["max"],
-            "visitor_rate": got["visitor_rate"], "at": got["at"],
-            "crowded": is_crowded(got),
-            "relief_at": (ease or {}).get("at", ""),
-            "relief_level": (ease or {}).get("level", "")}
+    return badge(p.lat, p.lon)
 
 
 @app.get("/api/crowd")

@@ -366,6 +366,12 @@ def to_en(s: str) -> str:
     조용히 지우면 뜻이 사라지고, 테스트가 그걸 잡아 준다."""
     if not s or not _RE:
         return s
+    # 문장 전체가 표에 있으면 거기서 끝난다. 아래에서 단위를 먼저 돌리는데,
+    # '1분'이 '1 min'이 되고 나면 '…1분쯤 걸립니다.' 같은 통문장 열쇠가
+    # 더는 맞지 않아 반만 옮겨진다.
+    whole = PHRASES.get(s.strip())
+    if whole is not None:
+        return whole
     # 단위를 먼저 처리한다. 구절 표가 '조회'를 먼저 지우면 '588회 조회'를
     # 한 덩어리로 볼 기회가 사라져 '588 views views'가 된다.
     out = s
