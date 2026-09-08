@@ -246,6 +246,40 @@ class TestMealPlan:
                               "mode": "clear"}).json()
         assert not any("찾지 못했습니다" in n for n in d["notes"])
 
+    def test_붙어_있는_두_끼니만_받는다(self, client):
+        """세 끼는 아침 7시부터 저녁 21시까지 14시간이다. 반나절 일정이
+        그 길이가 되면 더는 반나절이 아니다. 아침+저녁도 열 시간이 넘어
+        돌려 보면 저녁을 못 채운다."""
+        from weatherfit.server import _meals
+
+        assert _meals(["lunch"]) == ("lunch",)
+        assert _meals(["breakfast", "lunch"]) == ("breakfast", "lunch")
+        assert _meals(["lunch", "dinner"]) == ("lunch", "dinner")
+        assert _meals(["breakfast", "dinner"]) == ("breakfast",)
+        assert _meals(["breakfast", "lunch", "dinner"]) == ("breakfast", "lunch")
+        assert _meals(["dinner", "breakfast", "lunch"]) == ("breakfast", "lunch")
+
+    def test_고른_끼니에_맞춰_시간이_늘어난다(self, client):
+        """고르게 해 놓고 '못 찾았습니다'만 남기는 건 약속을 어기는 것이다."""
+        d = client.post("/api/plan", json={
+            **SEOUL, "at": "2026-09-09T11:00", "hours": 4,
+            "meals": ["lunch", "dinner"], "mode": "clear"}).json()
+        assert any("늘렸습니다" in n for n in d["notes"]), d["notes"]
+        # 저녁 창(17~21시)에 실제로 식당이 들어가야 한다
+        dinner = [s for s in d["steps"]
+                  if s["role"] == "food" and 17 <= int(s["arrive"][:2]) < 21]
+        assert dinner, [s["arrive"] for s in d["steps"] if s["role"] == "food"]
+
+    def test_안_고른_끼니에는_식당을_넣지_않는다(self, client):
+        """아침만 골랐는데 점심 식당까지 들어갔다. 명시한 사람에게
+        '그래도 점심때니까'는 참견이다."""
+        d = client.post("/api/plan", json={
+            **SEOUL, "at": "2026-09-09T08:00", "hours": 6,
+            "meals": ["breakfast"], "mode": "clear"}).json()
+        foods = [s for s in d["steps"] if s["role"] == "food"]
+        assert len(foods) == 1, [s["arrive"] for s in foods]
+        assert 7 <= int(foods[0]["arrive"][:2]) < 11
+
     def test_모르는_끼니에_500이_나지_않는다(self, client):
         r = client.post("/api/plan", json={
             **SEOUL, "at": AT, "hours": 4,

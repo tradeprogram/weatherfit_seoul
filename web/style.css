@@ -577,6 +577,10 @@ input:focus,select:focus{background:#fff}
 .warn-tag{display:inline-block;font-size:9.5px;padding:1px 6px;border-radius:5px;
   background:rgba(240,138,52,.16);color:#b56a1e;margin-left:4px;font-weight:600}
 
+/* 고를 수 없는 끼니. 눌리는데 안 되는 것보다 안 눌리는 편이 낫다. */
+.seg button:disabled{opacity:.38;cursor:not-allowed}
+.seg button:disabled:hover{background:none}
+
 /* ═════════ 관심사 · 취향 ═════════ */
 .ctl-top{align-items:flex-start}
 .interests{display:flex;flex-wrap:wrap;gap:4px;flex:1}

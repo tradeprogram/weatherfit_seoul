@@ -310,6 +310,14 @@ PHRASES: dict[str, str] = {
 # 숫자에 붙는 단위는 낱말로 바꾸면 다른 말을 망가뜨린다. '조회'가 '조x'가
 # 되고 '분위기'가 'min위기'가 된다. 숫자가 앞에 붙을 때만 바꾼다.
 UNITS: list[tuple[str, str]] = [
+    # 숫자가 둘이나 든 문장은 구절 표에 담을 수 없다. 단위 규칙이
+    # '4시간'과 '으로'를 먼저 먹으면 남은 한국어를 옮길 방법이 없다.
+    (r"아침까지 넣으려고 ([\d,]+)시간을 ([\d,]+)시간으로 늘렸습니다\.",
+     r"Extended the plan from \1 to \2 hours so breakfast fits."),
+    (r"점심까지 넣으려고 ([\d,]+)시간을 ([\d,]+)시간으로 늘렸습니다\.",
+     r"Extended the plan from \1 to \2 hours so lunch fits."),
+    (r"저녁까지 넣으려고 ([\d,]+)시간을 ([\d,]+)시간으로 늘렸습니다\.",
+     r"Extended the plan from \1 to \2 hours so dinner fits."),
     (r'([\d,]+)곳은 운영시간 정보가 없어 일반적인 영업시간\(([\d,]+)~([\d,]+)시\)으로 가정했습니다\. 방문 전 확인해 주세요\.',
      r'For \1 stop(s) the opening hours are unknown, so we assumed a normal day (\2:00-\3:00). Please check before you go.'),
     # 숫자가 가운데 든 문장은 구절 표에 담을 수 없다. 통째로 규칙을 둔다 —

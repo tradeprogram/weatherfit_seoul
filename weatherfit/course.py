@@ -366,9 +366,25 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         return course
 
     # ---------- 일정 쌓기 ----------
+    # 고른 끼니에 닿으려면 시간이 얼마나 드는지 먼저 본다. 모자라면 늘린다 —
+    # 고르게 해 놓고 '못 찾았습니다'만 남기는 건 약속을 어기는 것이다.
+    _want = {m for m in meals if m in MEALS}
+    need = meal_budget(when, meals)
+    if need > budget_min:
+        course.notes.append(
+            f"{MEAL_NAME[max((m for m in meals if m in MEALS), key=lambda m: MEALS[m][0])]}"
+            f"까지 넣으려고 {budget_min // 60}시간을 {-(-need // 60)}시간으로 늘렸습니다.")
+        budget_min = need
+        # 시간만 늘리고 자리를 그대로 두면 늘어난 시간이 빈다. 끼니는
+        # 약속이므로 그만큼은 미리 잡아 둔다 — 볼거리가 자리를 다 쓰면
+        # 정작 저녁 창에 닿아도 넣을 자리가 없다.
+        max_stops = max(max_stops, min(9, budget_min // 70) + len(_want))
+
     deadline = when + timedelta(minutes=budget_min)
     assumed_count = [0]
-    diversity = Diversity()
+    # 끼니를 둘 고르면 식당이 둘 필요하다. 기본 상한과 우연히 같더라도
+    # 그 관계를 우연에 맡기지 않는다.
+    diversity = Diversity(caps={"음식": max(2, len(_want))} if _want else None)
     used: set[str] = set()
     cursor = when
     here = origin
@@ -437,8 +453,12 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
     # 강남처럼 식당이 압도적으로 많은 동네에서 실제로 그렇게 나왔다.
     anchor_is_food = "음식" in (anchor_pick[0].content.category_path
                                 or anchor_pick[0].content.category)
+    # 끼니를 명시했으면 그것이 답이다. '점심때니까 식당을 넣어 드렸습니다'는
+    # 고른 사람에게 참견이 된다 — 아침만 골랐는데 점심 식당까지 들어갔다.
+    # 아무것도 안 고른 사람에게만 '식사 시간이면 음식 먼저'를 남긴다.
     want_food = (not anchor_is_food
-                 and (_is_meal_time(cursor) or (interests and "음식" in interests)))
+                 and ((not meals and _is_meal_time(cursor))
+                      or (interests and "음식" in interests)))
     order = ["food", "spot"] if want_food else ["spot", "food"]
 
     # 끼니를 아직 못 채운 것들. 시간대에 들어서면 그때 식당을 강제한다.
@@ -456,6 +476,11 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
         now_meal = meal_at(cursor)
         if now_meal in owed:
             order = ["food", "spot"]
+        elif meals:
+            # 끼니를 명시했으면 식당은 그 창에서만 넣는다. 번갈아 채우는
+            # 규칙이 창 밖에서 음식 차례를 돌리면, 시키지도 않은 15시
+            # 식당이 저녁 자리를 먼저 잡아먹는다.
+            order = ["spot"]
         for kind in order:
             cands = pick_from(foods if kind == "food"
                               else _style_first(_prefer(pool, interests),
@@ -472,7 +497,11 @@ def build_course(places: list[Place], when: datetime, weather: Weather,
                 break
         if not added:
             break
-        order = ["spot", "food"] if order[0] == "food" else ["food", "spot"]
+        if meals:
+            # 다음 바퀴의 순서는 그때 시각이 정한다(위에서 다시 계산한다).
+            order = ["spot"]
+        else:
+            order = ["spot", "food"] if order[0] == "food" else ["food", "spot"]
 
     # 채우지 못한 끼니는 말해 준다. 조용히 빠뜨리면 왜 없는지 알 수 없다.
     for m in sorted(owed):
@@ -669,6 +698,32 @@ MEALS: dict[str, tuple[int, int]] = {
     "dinner": (17, 21),
 }
 MEAL_NAME = {"breakfast": "아침", "lunch": "점심", "dinner": "저녁"}
+
+# 셋은 받지 않는다. 아침 7시부터 저녁 21시까지는 14시간인데, 반나절
+# 일정이 그 길이가 되면 더는 반나절이 아니다.
+MEALS_MAX = 2
+
+# 끼니 창까지 가는 데 붙는 이동 여유. 창이 열리는 시각에 딱 도착하는
+# 일정은 없다 — 앞의 볼거리와 이동이 20~30분을 밀어낸다.
+MEAL_SLACK = 40
+
+
+def meal_budget(when: datetime, meals: tuple[str, ...]) -> int:
+    """고른 끼니를 다 챙기려면 몇 분이 필요한가.
+
+    마지막 끼니 창이 열리는 시각에 도착해 한 끼를 먹고 나오는 데까지다.
+    이보다 예산이 적으면 고르게 해 놓고 못 지키는 약속이 된다.
+    """
+    want = [m for m in meals if m in MEALS]
+    if not want:
+        return 0
+    last = max(MEALS[m][0] for m in want)
+    end = when.replace(hour=last, minute=0, second=0, microsecond=0)
+    if end < when:                      # 이미 지난 창이면 그 자리에서 먹는다
+        end = when
+    # 창이 열리는 시각에 딱 도착한다는 계산은 앞 일정이 하나도 안 밀렸을
+    # 때만 맞는다. 실제로는 이동이 붙어 20~30분 늦게 닿는다.
+    return int((end - when).total_seconds() // 60) + DWELL["음식"] + MEAL_SLACK
 
 
 def meal_at(t: datetime) -> str | None:

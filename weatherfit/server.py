@@ -324,6 +324,28 @@ def course(lat: float = SEOUL_CITY_HALL[0], lon: float = SEOUL_CITY_HALL[1],
                        lang=lang)
 
 
+def _meals(raw: list[str] | None) -> tuple[str, ...]:
+    """끼니는 두 개까지. 바깥에서 오는 값이라 여기서 자른다.
+
+    아침 7시부터 저녁 21시까지는 14시간이다. 반나절 일정이 그 길이가
+    되면 더는 반나절이 아니라, 화면에서도 셋째는 못 고르게 해 두었다.
+    """
+    from .course import MEALS, MEALS_MAX
+
+    order = list(MEALS)
+    want = sorted({m for m in (raw or []) if m in MEALS}, key=order.index)
+    if not want:
+        return ()
+    # 붙어 있는 두 끼니만. 아침+저녁은 열 시간이 넘어 반나절이 아니게 된다.
+    out = [want[0]]
+    for m in want[1:]:
+        if len(out) >= MEALS_MAX:
+            break
+        if order.index(m) - order.index(out[-1]) == 1:
+            out.append(m)
+    return tuple(out)
+
+
 class PlanIn(BaseModel):
     lat: float = SEOUL_CITY_HALL[0]
     lon: float = SEOUL_CITY_HALL[1]
@@ -352,7 +374,7 @@ def plan(body: PlanIn):
                       profile=TrendProfile.from_styles(body.styles),
                       radius_m=4000, interests=",".join(body.interests),
                       taste=taste, lang=body.lang, exclude=body.exclude,
-                      meals=tuple(body.meals or ()))
+                      meals=_meals(body.meals))
     out["taste_applied"] = not taste.is_empty
     return out
 

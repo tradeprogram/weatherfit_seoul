@@ -88,18 +88,25 @@ def subcategory(place: Place) -> str:
 
 @dataclass
 class Diversity:
-    """일정에 담은 분류를 세어 상한을 지킨다."""
+    """일정에 담은 분류를 세어 상한을 지킨다.
+
+    `caps`로 상한을 덮어쓸 수 있다. 끼니를 둘 고르면 식당이 둘 필요한데
+    기본 상한이 둘이라 마침 맞지만, 그 관계를 우연에 맡기지 않는다.
+    """
     categories: dict[str, int] = None
     subcategories: dict[str, int] = None
+    caps: dict[str, int] = None
 
     def __post_init__(self):
         self.categories = self.categories or {}
         self.subcategories = self.subcategories or {}
+        self.caps = self.caps or {}
 
     def allows(self, place: Place) -> bool:
         cat = place.content.category
         sub = subcategory(place)
-        cap = MAX_PER_CATEGORY.get(cat, DEFAULT_MAX_CATEGORY)
+        cap = self.caps.get(cat,
+                            MAX_PER_CATEGORY.get(cat, DEFAULT_MAX_CATEGORY))
         if self.categories.get(cat, 0) >= cap:
             return False
         if self.subcategories.get(sub, 0) >= MAX_PER_SUBCATEGORY:
